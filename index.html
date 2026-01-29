@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kalkulator procentu składanego</title>
+  <meta name="description" content="Prosty kalkulator procentu składanego z regularnymi wpłatami." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="card">
+    <h1>Kalkulator procentu składanego</h1>
+    <p class="muted">Wpisz dane i zobacz wynik. Bez czarów, tylko matematyka.</p>
+
+    <form id="calcForm" class="grid">
+      <label>
+        Kapitał początkowy (PLN)
+        <input id="principal" type="number" min="0" step="0.01" value="10000" required>
+      </label>
+
+      <label>
+        Miesięczna wpłata (PLN)
+        <input id="monthly" type="number" min="0" step="0.01" value="500" required>
+      </label>
+
+      <label>
+        Oprocentowanie roczne (%)
+        <input id="rate" type="number" min="0" step="0.01" value="8" required>
+      </label>
+
+      <label>
+        Liczba lat
+        <input id="years" type="number" min="0" step="1" value="10" required>
+      </label>
+
+      <button type="submit">Policz</button>
+    </form>
+
+    <section class="result" aria-live="polite">
+      <div><span>Wartość końcowa:</span> <strong id="finalValue">–</strong></div>
+      <div><span>Wpłacone łącznie:</span> <strong id="totalContrib">–</strong></div>
+      <div><span>Zysk:</span> <strong id="profit">–</strong></div>
+    </section>
+
+    <footer class="small muted">
+      Tip: To liczy kapitalizację miesięczną. Prosto i wystarczy na start.
+    </footer>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
