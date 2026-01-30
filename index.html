@@ -1,52 +1,422 @@
 <!doctype html>
 <html lang="pl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kalkulator procentu składanego</title>
-  <meta name="description" content="Prosty kalkulator procentu składanego z regularnymi wpłatami." />
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Magazyn</title>
+    <meta name="description" content="Prosty magazyn: części (partie i ceny zakupu), dostawy, produkcja maszyn, magazyn maszyn." />
+    <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
-  <main class="card">
-    <h1>Kalkulator procentu składanego</h1>
-    <p class="muted">Wpisz dane i zobacz wynik. Bez czarów, tylko matematyka.</p>
+    <main class="app">
+        <header class="top">
+            <h1>Magazyn</h1>
+            
+            <p class="small muted">
+                Skróty: <strong>SKU</strong> = kod części. <strong>FIFO</strong> = najpierw zużywane są najstarsze partie.
+            </p>
+        </header>
 
-    <form id="calcForm" class="grid">
-      <label>
-        Kapitał początkowy (PLN)
-        <input id="principal" type="number" min="0" step="0.01" value="10000" required>
-      </label>
+        <section class="grid2">
 
-      <label>
-        Miesięczna wpłata (PLN)
-        <input id="monthly" type="number" min="0" step="0.01" value="500" required>
-      </label>
+            <!-- MAGAZYN CZĘŚCI -->
+            <div class="card">
+                <h2>Magazyn części</h2>
+                <p class="small muted">
+                    Najpierw jest podsumowanie per SKU (ile łącznie sztuk i wartość), a niżej partie, czyli te same części kupione po różnych cenach osobno.
+                </p>
 
-      <label>
-        Oprocentowanie roczne (%)
-        <input id="rate" type="number" min="0" step="0.01" value="8" required>
-      </label>
+                <div class="toolbar">
+                    <input id="searchParts" type="text" placeholder="Szukaj po nazwie / SKU..." />
+                    <button id="seedDemoBtn" type="button" class="secondary">Wgraj demo dane</button>
+                </div>
 
-      <label>
-        Liczba lat
-        <input id="years" type="number" min="0" step="1" value="10" required>
-      </label>
+                <!-- Progi podświetlenia -->
+                <div class="thresholds">
+                    <div class="thresholdRow">
+                        <label>
+                            Próg żółty (poniżej)
+                            <input id="warnRange" type="range" min="0" max="1000" step="10" value="100" />
+                        </label>
+                        <span class="pill"><strong id="warnValue">100</strong> szt.</span>
+                    </div>
 
-      <button type="submit">Policz</button>
-    </form>
+                    <div class="thresholdRow">
+                        <label>
+                            Próg czerwony (poniżej)
+                            <input id="dangerRange" type="range" min="0" max="1000" step="10" value="50" />
+                        </label>
+                        <span class="pill danger"><strong id="dangerValue">50</strong> szt.</span>
+                    </div>
+                </div>
 
-    <section class="result" aria-live="polite">
-      <div><span>Wartość końcowa:</span> <strong id="finalValue">–</strong></div>
-      <div><span>Wpłacone łącznie:</span> <strong id="totalContrib">–</strong></div>
-      <div><span>Zysk:</span> <strong id="profit">–</strong></div>
-    </section>
+                <h3 class="subhead">Podsumowanie (per SKU)</h3>
+                <div class="tableWrap">
+                    <table id="skuSummaryTable">
+                        <thead>
+                            <tr>
+                                <th>Nazwa</th>
+                                <th>SKU</th>
+                                <th class="right">Łącznie szt.</th>
+                                <th class="right">Wartość łączna</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
 
-    <footer class="small muted">
-      Tip: To liczy kapitalizację miesięczną. Prosto i wystarczy na start.
-    </footer>
-  </main>
+                <h3 class="subhead">Partie (różne ceny osobno)</h3>
 
-  <script src="script.js"></script>
+                <div class="tableWrap">
+                    <div class="summaryRow">
+                        <div class="muted small">Łączna wartość magazynu:</div>
+                        <div class="right"><strong id="warehouseTotal">0,00 zł</strong></div>
+                    </div>
+
+                    <table id="partsTable">
+                        <thead>
+                            <tr>
+                                <th>Nazwa</th>
+                                <th>SKU</th>
+                                <th>Dostawca</th>
+                                <th class="right">Cena zakupu</th>
+                                <th class="right">Ilość</th>
+                                <th class="right">Wartość</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <p class="small muted">
+                    Partie są osobno, bo cena zakupu może się różnić. Podświetlenie żółte/czerwone dotyczy <strong>podsumowania per SKU</strong> (łączny stan).
+                </p>
+            </div>
+
+            <!-- NOWA DOSTAWA -->
+            <div class="card">
+                <h2>Nowa dostawa</h2>
+                <p class="small muted">
+                    Dodajesz dostawę od dostawcy. Lista części pochodzi z jego cennika, a cena uzupełnia się automatycznie.
+                    Możesz ją zmienić ręcznie dla tej jednej dostawy (np. rabat lub inna cena na fakturze).
+                </p>
+
+                <div class="row">
+                    <label>
+                        Dostawca
+                        <select id="supplierSelect"></select>
+                    </label>
+
+                    <label>
+                        Data
+                        <input id="deliveryDate" type="date" />
+                    </label>
+                </div>
+
+                <div class="row">
+                    <label>
+                        Część od dostawcy
+                        <select id="supplierPartsSelect"></select>
+                    </label>
+
+                    <label>
+                        Ilość
+                        <input id="deliveryQty" type="number" min="1" step="1" value="1" />
+                    </label>
+                </div>
+
+                <div class="row">
+                    <label>
+                        Cena za szt. (PLN)
+                        <input id="deliveryPrice" type="number" min="0" step="0.01" value="0" />
+                    </label>
+
+                    <button id="addDeliveryItemBtn" type="button">Dodaj pozycję</button>
+                </div>
+
+                <div class="tableWrap">
+                    <table id="deliveryItemsTable">
+                        <thead>
+                            <tr>
+                                <th>Część</th>
+                                <th class="right">Ilość</th>
+                                <th class="right">Cena</th>
+                                <th class="right">Wartość</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div class="summary">
+                    <div><span>Pozycji:</span> <strong id="itemsCount">0</strong></div>
+                    <div><span>Suma:</span> <strong id="itemsTotal">0,00 zł</strong></div>
+                </div>
+
+                <button id="finalizeDeliveryBtn" type="button" class="primary">Zapisz dostawę (dodaj partie)</button>
+
+                <p class="small muted">
+                    W tej wersji dane są lokalne (bez kont/logowania). Zapis/backup zrobimy później.
+                </p>
+            </div>
+
+            <!-- PRODUKCJA -->
+            <div class="card">
+                <h2>Nowa produkcja</h2>
+                <p class="small muted">
+                    Dodaj maszyny do listy, a potem finalizuj. System sprawdzi braki części, odejmie stany z magazynu i doda gotowe maszyny do “Magazynu maszyn”.
+                </p>
+
+                <div class="row">
+                    <label>
+                        Maszyna
+                        <select id="machineSelect"></select>
+                    </label>
+
+                    <label>
+                        Ilość
+                        <input id="buildQty" type="number" min="1" step="1" value="1" />
+                    </label>
+                </div>
+
+                <div class="row">
+                    <label>
+                        Data
+                        <input id="buildDate" type="date" />
+                    </label>
+
+                    <button id="addBuildItemBtn" type="button">Dodaj do listy</button>
+                </div>
+
+                <div class="row">
+                    <label>
+                        Tryb zużycia
+                        <select id="consumeMode">
+                            <option value="fifo" selected>Auto (FIFO)</option>
+                            <option value="manual">Ręczny wybór partii</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div id="missingBox" class="missingBox" hidden>
+                    <strong>Braki części:</strong>
+                    <ul id="missingList" class="small"></ul>
+                </div>
+
+                <div id="manualConsumeBox" class="missingBox" hidden>
+                    <strong>Ręczny wybór partii do zużycia:</strong>
+                    <div id="manualConsumeUI" class="small muted" style="margin-top:8px">
+                        (Dodaj maszyny do listy, a potem wybierz partie do pobrania.)
+                    </div>
+                </div>
+
+                <div class="tableWrap">
+                    <table id="buildItemsTable">
+                        <thead>
+                            <tr>
+                                <th>Maszyna</th>
+                                <th class="right">Ilość</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div class="summary">
+                    <div><span>Pozycji:</span> <strong id="buildItemsCount">0</strong></div>
+                </div>
+
+                <button id="finalizeBuildBtn" type="button" class="primary">Finalizuj produkcję</button>
+
+                <p class="small muted">
+                    Tryby: <strong>Auto (FIFO)</strong> zużywa najstarsze partie. <strong>Ręczny</strong> pozwala wybrać konkretne partie do pobrania.
+                </p>
+            </div>
+
+            <!-- MAGAZYN MASZYN -->
+            <div class="card">
+                <h2>Magazyn maszyn</h2>
+                <p class="small muted">
+                    Tu są gotowe maszyny, które powstały po finalizacji produkcji. To jest stan „na magazynie”.
+                </p>
+
+                <div class="toolbar">
+                    <input id="searchMachines" type="text" placeholder="Szukaj po nazwie / kodzie..." />
+                </div>
+
+                <div class="tableWrap">
+                    <table id="machinesStockTable">
+                        <thead>
+                            <tr>
+                                <th>Nazwa</th>
+                                <th>Kod</th>
+                                <th class="right">Ilość</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- KATALOG CZĘŚCI (GLOBALNY) -->
+            <div class="card">
+                <h2>Katalog części (globalny)</h2>
+                <p class="small muted">
+                    Lista wszystkich części. <strong>SKU</strong> jest unikalne (jeden kod = jedna część). Ceny nie są tutaj, tylko w cennikach dostawców.
+                </p>
+
+                <div class="row">
+                    <label>
+                        SKU
+                        <input id="partSkuInput" type="text" placeholder="np. BRG-6204" />
+                    </label>
+
+                    <label>
+                        Nazwa
+                        <input id="partNameInput" type="text" placeholder="np. Łożysko 6204" />
+                    </label>
+                </div>
+
+                <div class="row">
+                    <button id="addPartBtn" type="button">Dodaj część</button>
+                </div>
+
+                <div class="tableWrap">
+                    <table id="partsCatalogTable">
+                        <thead>
+                            <tr>
+                                <th>Nazwa</th>
+                                <th>SKU</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- DOSTAWCY I CENNIKI -->
+            <div class="card">
+                <h2>Dostawcy i cenniki</h2>
+                <p class="small muted">
+                    Każdy dostawca ma swój cennik (SKU → cena). To zasila listę części w „Nowej dostawie”.
+                </p>
+
+                <div class="row">
+                    <label>
+                        Nowy dostawca
+                        <input id="supplierNameInput" type="text" placeholder="np. ABC-Tools" />
+                    </label>
+                    <button id="addSupplierBtn" type="button">Dodaj dostawcę</button>
+                </div>
+
+                <div class="row">
+                    <label>
+                        Edytuj dostawcę
+                        <select id="supplierManageSelect"></select>
+                    </label>
+                </div>
+
+                <div class="row">
+                    <label>
+                        Część (SKU)
+                        <select id="supplierSkuSelect"></select>
+                    </label>
+
+                    <label>
+                        Cena (PLN/szt.)
+                        <input id="supplierPriceInput" type="number" min="0" step="0.01" value="0" />
+                    </label>
+
+                    <button id="setSupplierPriceBtn" type="button">Ustaw cenę</button>
+                </div>
+
+                <div class="tableWrap">
+                    <table id="supplierPriceTable">
+                        <thead>
+                            <tr>
+                                <th>Nazwa</th>
+                                <th>SKU</th>
+                                <th class="right">Cena</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- MASZYNY + BOM -->
+            <div class="card">
+                <h2>Dodawanie i edycja maszyn (BOM)</h2>
+                <p class="small muted">
+                    Tutaj tworzysz nowe typy maszyn i ich skład. BOM to lista części (SKU) i ilości potrzebnych na <strong>1 sztukę</strong> maszyny.
+                </p>
+
+                <div class="row">
+                    <label>
+                        Kod maszyny
+                        <input id="machineCodeInput" type="text" placeholder="np. M-IR02" />
+                    </label>
+
+                    <label>
+                        Nazwa maszyny
+                        <input id="machineNameInput" type="text" placeholder="np. Maszyna IR-02" />
+                    </label>
+                </div>
+
+                <div class="row">
+                    <button id="addMachineBtn" type="button">Dodaj maszynę</button>
+                </div>
+
+                <div class="row">
+                    <label>
+                        Edytuj maszynę
+                        <select id="machineManageSelect"></select>
+                    </label>
+                </div>
+
+                <div class="row">
+                    <label>
+                        Część (SKU)
+                        <select id="bomSkuSelect"></select>
+                    </label>
+
+                    <label>
+                        Ilość / 1 szt.
+                        <input id="bomQtyInput" type="number" min="1" step="1" value="1" />
+                    </label>
+
+                    <button id="addBomItemBtn" type="button">Dodaj do BOM</button>
+                </div>
+
+                <div class="tableWrap">
+                    <table id="bomTable">
+                        <thead>
+                            <tr>
+                                <th>Nazwa</th>
+                                <th>SKU</th>
+                                <th class="right">Ilość</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <p class="small muted">
+                    Wskazówka: jeśli nie ma jakiejś części na liście BOM, dodaj ją najpierw w „Katalog części (globalny)”.
+                </p>
+            </div>
+
+        </section>
+
+        <footer class="foot muted small">
+            Wersja 0.4.
+        </footer>
+    </main>
+
+    <script src="script.js"></script>
 </body>
 </html>
