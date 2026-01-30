@@ -37,7 +37,7 @@ const state = {
 
   // dostawa
   currentDelivery: {
-    supplier: "Wybierz dostawcę...",
+    supplier: null,
     dateISO: "",
     items: [] // {id, sku, name, qty, price}
   },
@@ -94,6 +94,11 @@ function applySerializedState(data) {
   state.currentDelivery = data.currentDelivery && typeof data.currentDelivery === "object"
     ? data.currentDelivery
     : state.currentDelivery;
+
+  // normalizacja placeholdera (stare wersje)
+  if (state.currentDelivery && state.currentDelivery.supplier === "Wybierz dostawcę...") {
+    state.currentDelivery.supplier = null;
+  }
 
   state.currentBuild = data.currentBuild && typeof data.currentBuild === "object"
     ? data.currentBuild
@@ -157,7 +162,7 @@ function resetAllData() {
   state.suppliers = new Map();
   state.machineCatalog = JSON.parse(JSON.stringify(DEFAULT_MACHINE_CATALOG));
 
-  state.currentDelivery = { supplier: "Wybierz dostawcę...", dateISO: "", items: [] };
+  state.currentDelivery = { supplier: null, dateISO: "", items: [] };
   state.currentBuild = { dateISO: "", items: [] };
 
   LOW_WARN = 100;
@@ -245,6 +250,14 @@ bomBody: document.querySelector("#bomTable tbody"),
 };
 
 // ====== Utils ======
+
+function hasPendingWork() {
+  return (
+    state.currentDelivery.items.length > 0 ||
+    state.currentBuild.items.length > 0
+  );
+}
+
 function escapeHtml(str) {
   return String(str ?? "")
     .replaceAll("&", "&amp;")
@@ -257,6 +270,13 @@ function escapeAttr(str) { return escapeHtml(str).replaceAll('"', "&quot;"); }
 
 function normSku(sku) { return String(sku || "").trim(); }
 function skuKey(sku) { return normSku(sku).toLowerCase(); }
+
+// liczby/kwoty: wywal NaN, trzymaj >= 0
+function safePrice(val, fallback = 0) {
+  const n = Number(val);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, n);
+}
 
 // ====== Katalog części (globalny) ======
 function upsertPart(sku, name) {
@@ -309,7 +329,7 @@ function setSupplierPrice(supplierName, sku, price) {
   const s = normSku(sku);
   if (!s) return { ok: false, msg: "Podaj SKU." };
 
-  const p = Math.max(0, Number(price || 0));
+  const p = safePrice(price, 0);
   const key = skuKey(s);
 
   // SKU musi istnieć w katalogu (żeby nie robić śmietnika)
@@ -324,10 +344,17 @@ function setSupplierPrice(supplierName, sku, price) {
 function renderSupplierSelects() {
   // select w dostawie
   if (els.supplierSelect) {
-    const names = ["Wybierz dostawcę...", ...Array.from(state.suppliers.keys()).sort((a,b)=>a.localeCompare(b,"pl"))];
-    els.supplierSelect.innerHTML = names.map(x => `<option value="${escapeAttr(x)}">${escapeHtml(x)}</option>`).join("");
-    if (!names.includes(state.currentDelivery.supplier)) state.currentDelivery.supplier = "Wybierz dostawcę...";
-    els.supplierSelect.value = state.currentDelivery.supplier;
+    const names = Array.from(state.suppliers.keys()).sort((a,b)=>a.localeCompare(b,"pl"));
+    els.supplierSelect.innerHTML = [
+      `<option value="">Wybierz dostawcę...</option>`,
+      ...names.map(x => `<option value="${escapeAttr(x)}">${escapeHtml(x)}</option>`)
+    ].join("");
+
+    // supplier w stanie trzymamy jako null albo nazwa dostawcy
+    if (!state.currentDelivery.supplier || !state.suppliers.has(state.currentDelivery.supplier)) {
+      state.currentDelivery.supplier = null;
+    }
+    els.supplierSelect.value = state.currentDelivery.supplier || "";
   }
 
   // select w panelu zarządzania dostawcą
@@ -396,10 +423,10 @@ function supplierPriceForSku(supplierName, sku) {
 function renderSupplierPartsForDelivery() {
   if (!els.supplierPartsSelect) return;
 
-  const supplier = els.supplierSelect?.value || "Wybierz dostawcę...";
-  state.currentDelivery.supplier = supplier;
+  const supplier = els.supplierSelect?.value || "";
+  state.currentDelivery.supplier = supplier || null;
 
-  if (!state.suppliers.has(supplier)) {
+  if (!supplier || !state.suppliers.has(supplier)) {
     els.supplierPartsSelect.innerHTML = "";
     els.supplierPartsSelect.disabled = true;
     els.addDeliveryItemBtn.disabled = true;
@@ -436,7 +463,7 @@ function renderSupplierPartsForDelivery() {
 function onDeliveryPartChange() {
   const opt = els.supplierPartsSelect?.selectedOptions?.[0];
   if (!opt) return;
-  const price = Number(opt.dataset.price || 0);
+  const price = safePrice(opt.dataset.price, 0);
   els.deliveryPrice.value = String(price);
 }
 
@@ -450,8 +477,13 @@ function addDeliveryItem() {
   const sku = String(opt.dataset.sku || "").trim();
   const name = getPartName(sku);
 
-  const qty = Math.max(1, Math.floor(Number(els.deliveryQty.value) || 1));
-  const price = Math.max(0, Number(els.deliveryPrice.value) || 0); // można nadpisać ręcznie
+  const rawQty = Number(els.deliveryQty.value);
+if (!Number.isInteger(rawQty) || rawQty <= 0) {
+  return alert("Ilość musi być liczbą większą od zera.");
+}
+const qty = rawQty;
+
+  const price = safePrice(els.deliveryPrice.value, 0); // można nadpisać ręcznie
 
   state.currentDelivery.items.push({
     id: nextId(),
@@ -488,7 +520,7 @@ function addLot({ name, sku, supplier, qty, unitPrice }) {
   const cleanName = String(name || "").trim();
   const cleanSupplier = String(supplier || "").trim();
   const q = Math.max(0, Math.floor(Number(qty || 0)));
-  const price = Math.max(0, Number(unitPrice || 0));
+  const price = safePrice(unitPrice, 0);
   if (!cleanSku || !cleanName || q <= 0) return;
 
   const existing = state.lots.find(l =>
@@ -514,7 +546,7 @@ function addLot({ name, sku, supplier, qty, unitPrice }) {
 
 function finalizeDelivery() {
   const supplier = state.currentDelivery.supplier;
-  if (!state.suppliers.has(supplier)) return alert("Wybierz dostawcę.");
+  if (!supplier || !state.suppliers.has(supplier)) return alert("Wybierz dostawcę.");
   if (state.currentDelivery.items.length === 0) return alert("Dodaj przynajmniej jedną pozycję.");
 
   state.currentDelivery.dateISO = els.deliveryDate.value || "";
@@ -611,13 +643,14 @@ function addBomItem(machineCode, sku, qty) {
     return { ok:false, msg:"Najpierw dodaj to SKU do katalogu części." };
   }
 
-  // jeśli już jest w BOM, to sumuj ilości (prościej)
+  // jeśli już jest w BOM, to NADPISUJ ilość (logiczniejsze)
   const existing = m.bom.find(b => skuKey(b.sku) === key);
-  if (existing) existing.qty += q;
+  if (existing) existing.qty = q;
   else m.bom.push({ sku: s, qty: q });
 
-  return { ok:true, msg:"Dodano do BOM." };
+  return { ok:true, msg:"Ustawiono w BOM." };
 }
+
 function renderSkuSummary() {
   const q = (els.searchParts.value || "").trim().toLowerCase();
   const map = new Map();
@@ -683,7 +716,10 @@ function renderWarehouseTotal() {
 
 // ====== Produkcja (FIFO + ręczny) ======
 function renderMachineSelect() {
-  els.machineSelect.innerHTML = state.machineCatalog.map(m => `
+  const rows = state.machineCatalog
+    .slice()
+    .sort((a,b)=>a.name.localeCompare(b.name,"pl"));
+  els.machineSelect.innerHTML = rows.map(m => `
     <option value="${escapeAttr(m.code)}">${escapeHtml(m.name)} (${escapeHtml(m.code)})</option>
   `).join("");
 }
@@ -701,10 +737,19 @@ function renderBuildItems() {
 }
 
 function addBuildItem() {
+    const rawQty = Number(els.buildQty.value);
+if (!Number.isInteger(rawQty) || rawQty <= 0) {
+  return alert("Ilość musi być liczbą większą od zera.");
+}
+
   const code = els.machineSelect.value;
-  const qty = Math.max(1, Math.floor(Number(els.buildQty.value) || 1));
+  const qty = rawQty;
+
   const machine = state.machineCatalog.find(m => m.code === code);
   if (!machine) return alert("Nie znaleziono maszyny.");
+  if (!machine.bom || machine.bom.length === 0) {
+    return alert(`Maszyna ${machine.name} (${machine.code}) nie ma zdefiniowanego BOM.`);
+  }
 
   state.currentBuild.items.push({ id: nextId(), machineCode: machine.code, machineName: machine.name, qty });
 
@@ -868,6 +913,15 @@ function addToMachinesStock(code, name, qty) {
 }
 
 function finalizeBuild() {
+    for (const bi of state.currentBuild.items) {
+  const machine = state.machineCatalog.find(m => m.code === bi.machineCode);
+  if (!machine || !machine.bom || machine.bom.length === 0) {
+    return alert(
+      `Maszyna ${bi.machineName} (${bi.machineCode}) nie ma zdefiniowanego BOM.`
+    );
+  }
+ }
+
   if (state.currentBuild.items.length === 0) return alert("Dodaj przynajmniej jedną maszynę do listy.");
 
   state.currentBuild.dateISO = els.buildDate.value || "";
@@ -1065,6 +1119,13 @@ renderBomTable();
   if (els.consumeMode && els.consumeMode.value === "manual") refreshManualConsumeUI();
 }
 init();
+
+window.addEventListener("beforeunload", (e) => {
+  if (!hasPendingWork()) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
+
 
 // ===== Eventy ogólne =====
 els.addMachineBtn?.addEventListener("click", () => {
