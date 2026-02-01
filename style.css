@@ -351,7 +351,7 @@ td {
 }
 
 tr:hover td {
-    background: rgba(255,255,255,0.04);
+    background: rgba(255,255,255,0.028);
 }
 
 .badge {
@@ -748,7 +748,7 @@ input:focus, select:focus{
 }
 
 table tbody tr{ transition: background var(--t) var(--ease); }
-table tbody tr:hover{ background: rgba(255,255,255,0.05); }
+table tbody tr:hover{ background: rgba(255,255,255,0.035); }
 
 button:disabled{
   opacity: 0.45;
@@ -1095,8 +1095,56 @@ button.success:hover{
   padding: 0 !important;
   border-bottom: none !important;
 }
+
+.inlineEditorRow:hover td{
+  background: transparent !important;
+}
+.noHover:hover td{
+  background: transparent !important;
+}
 .inlineEditorWrap{
   padding: 12px 12px 4px;
   background: rgba(255,255,255,0.02);
   border-top: 1px solid rgba(255,255,255,0.10);
+}
+
+
+/* Supplier editor: nie podbijaj hover gdy wiersz jest "otwarty" */
+.noHover:hover{ background: transparent !important; }
+
+/* Akcje w edytorze dostawcy: na prawo */
+.editorActions{ display:flex; justify-content:flex-end; gap:10px; }
+
+/* ===== Inline supplier editor: prevent double hover highlight ===== */
+.inlineEditorRow td{
+  background: transparent !important;
+}
+.inlineEditorRow:hover td{
+  background: transparent !important;
+}
+/* supplier editor template is a uiSection; freeze its hover state */
+.inlineEditorRow .uiSection{
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(255,255,255,0.10);
+}
+.inlineEditorRow .uiSection:hover{
+  background: rgba(255,255,255,0.03) !important;
+  border-color: rgba(255,255,255,0.10) !important;
+}
+
+/* ===== Maszyny: inline edycja BOM ===== */
+.inlineMeta{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.18);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.rowActionsRight{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
 }

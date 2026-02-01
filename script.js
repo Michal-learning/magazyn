@@ -179,6 +179,13 @@ addBomItemBtn: document.getElementById("addBomItemBtn"),
 bomBody: document.querySelector("#bomTable tbody"),
   machinesCatalogBody: document.querySelector("#machinesCatalogTable tbody"),
 
+  // inline edycja BOM (maszyny)
+  machineEditorTemplate: document.getElementById("machineEditorTemplate"),
+  machineEditorName: document.getElementById("machineEditorName"),
+  machineEditorCode: document.getElementById("machineEditorCode"),
+  machineEditorSaveBtn: document.getElementById("machineEditorSaveBtn"),
+  machineEditorCancelBtn: document.getElementById("machineEditorCancelBtn"),
+
   // magazyn części
   searchParts: document.getElementById("searchParts"),
   clearDataBtn: document.getElementById("clearDataBtn"),
@@ -457,7 +464,7 @@ function renderSupplierEditorPartDropdown(){
   if (!els.supplierEditorPartSelect) return;
   const parts = Array.from(state.partsCatalog.values()).sort((a,b)=>a.sku.localeCompare(b.sku,"pl"));
   els.supplierEditorPartSelect.innerHTML = parts.length
-    ? parts.map(p => `<option value="${escapeAttr(p.sku)}">${escapeHtml(p.sku)} • ${escapeHtml(p.name)}</option>`).join("")
+    ? parts.map(p => `<option value="${escapeAttr(p.sku)}">${escapeHtml(p.sku)} (${escapeHtml(p.name)})</option>`).join("")
     : `<option value="">(dodaj części do katalogu)</option>`;
 }
 
@@ -494,9 +501,8 @@ function renderSupplierEditorPriceTable(){
 
 function openSupplierEditor(name){
   if (!state.suppliers.has(name)) return;
-  if (uiEditingSupplier === name){
-    unmountSupplierEditor();
-    renderSuppliersList();
+  if (uiEditingSupplier === name) {
+    // już otwarte: zamykanie jest przez Zapisz/Anuluj
     return;
   }
   uiEditingSupplier = name;
@@ -672,7 +678,7 @@ function renderSupplierSkuDropdown() {
     .sort((a,b)=>a.sku.localeCompare(b.sku,"pl"));
 
   els.supplierSkuSelect.innerHTML = parts.length
-    ? parts.map(p => `<option value="${escapeAttr(p.sku)}">${escapeHtml(p.sku)} • ${escapeHtml(p.name)}</option>`).join("")
+    ? parts.map(p => `<option value="${escapeAttr(p.sku)}">${escapeHtml(p.sku)} (${escapeHtml(p.name)})</option>`).join("")
     : `<option value="">(dodaj części do katalogu)</option>`;
 }
 
@@ -758,12 +764,12 @@ function renderSuppliersList() {
   const names = Array.from(state.suppliers.keys()).sort((a,b)=>a.localeCompare(b,"pl"));
   els.suppliersListBody.innerHTML = names.map(n => {
     const isOpen = (uiEditingSupplier === n);
-    const editLabel = isOpen ? "Zamknij" : "Edytuj";
+    const editLabel = "Edytuj";
     return `
-      <tr>
+      <tr class="${isOpen ? "noHover" : ""}">
         <td>${escapeHtml(n)}</td>
         <td class="right">
-          <button type="button" class="success" data-edit-supplier="${escapeAttr(n)}">${editLabel}</button>
+          <button type="button" class="success" data-edit-supplier="${escapeAttr(n)}" ${isOpen ? "disabled" : ""}>${editLabel}</button>
           <button type="button" class="secondary" data-delete-supplier="${escapeAttr(n)}">Usuń</button>
         </td>
       </tr>
@@ -782,6 +788,119 @@ function renderSuppliersList() {
     }
   }
 }
+
+// ====== Maszyny: inline edycja BOM (rozsuwana pod wierszem) ======
+let uiEditingMachineCode = null;
+let uiEditingMachineBom = null; // Array<{sku, qty}>
+let uiMachineEditorHome = null; // {parent, nextSibling}
+let uiMachineEditorRow = null;  // <tr>
+
+function initMachineEditorHome(){
+  if (!els.machineEditorTemplate || uiMachineEditorHome) return;
+  uiMachineEditorHome = {
+    parent: els.machineEditorTemplate.parentElement,
+    nextSibling: els.machineEditorTemplate.nextElementSibling
+  };
+}
+
+function unmountMachineEditor(){
+  if (!els.machineEditorTemplate || !uiMachineEditorHome) return;
+  els.machineEditorTemplate.hidden = true;
+  if (uiMachineEditorRow){
+    uiMachineEditorRow.remove();
+    uiMachineEditorRow = null;
+  }
+  const p = uiMachineEditorHome.parent;
+  if (!p) return;
+  if (uiMachineEditorHome.nextSibling && uiMachineEditorHome.nextSibling.parentElement === p) {
+    p.insertBefore(els.machineEditorTemplate, uiMachineEditorHome.nextSibling);
+  } else {
+    p.appendChild(els.machineEditorTemplate);
+  }
+  uiEditingMachineCode = null;
+  uiEditingMachineBom = null;
+}
+
+function mountMachineEditorAfter(rowEl){
+  if (!els.machineEditorTemplate) return;
+  initMachineEditorHome();
+  if (uiMachineEditorRow) uiMachineEditorRow.remove();
+
+  uiMachineEditorRow = document.createElement("tr");
+  uiMachineEditorRow.className = "inlineEditorRow";
+  // tabela maszyn ma 4 kolumny
+  uiMachineEditorRow.innerHTML = `<td colspan="4"><div class="inlineEditorWrap"></div></td>`;
+  rowEl.parentElement.insertBefore(uiMachineEditorRow, rowEl.nextElementSibling);
+  uiMachineEditorRow.querySelector(".inlineEditorWrap").appendChild(els.machineEditorTemplate);
+  els.machineEditorTemplate.hidden = false;
+}
+
+function cloneBom(bom){
+  return (bom || []).map(x => ({ sku: x.sku, qty: Number(x.qty || 1) }));
+}
+
+function renderMachineEditorHeader(){
+  if (!uiEditingMachineCode) return;
+  const m = state.machineCatalog.find(x => x.code === uiEditingMachineCode);
+  if (!m) return;
+  if (els.machineEditorName) els.machineEditorName.textContent = m.name || "";
+  if (els.machineEditorCode) els.machineEditorCode.textContent = m.code || "";
+}
+
+function openMachineEditor(code){
+  const m = state.machineCatalog.find(x => x.code === code);
+  if (!m) return;
+
+  if (uiEditingMachineCode === code) return;
+
+  uiEditingMachineCode = code;
+  uiEditingMachineBom = cloneBom(m.bom);
+
+  // ustaw ukryty select (dla istniejącej logiki)
+  renderMachineManageSelect();
+  if (els.machineManageSelect) els.machineManageSelect.value = code;
+
+  renderMachineEditorHeader();
+  renderBomSkuSelect();
+  renderBomTable();
+  renderMachinesCatalogTable();
+}
+
+function commitMachineEditor(){
+  if (!uiEditingMachineCode) return;
+  const m = state.machineCatalog.find(x => x.code === uiEditingMachineCode);
+  if (!m) return;
+  m.bom = cloneBom(uiEditingMachineBom);
+  saveState();
+
+  unmountMachineEditor();
+  renderMachinesCatalogTable();
+  renderMachineSelect();
+  toast("Zapisano", `BOM: ${m.name} (${m.code})`, "ok");
+}
+
+function cancelMachineEditor(){
+  if (!uiEditingMachineCode) return;
+  unmountMachineEditor();
+  renderMachinesCatalogTable();
+  toast("Anulowano", "Zmiany nie zostały zapisane.", "warn", 1800);
+}
+
+function setBomItemInTemp(sku, qty){
+  const s = String(sku || "").trim();
+  if (!s) return { ok:false, msg:"Wybierz część." };
+  const q = Math.max(1, Math.floor(Number(qty || 1)));
+  const key = skuKey(s);
+  if (!state.partsCatalog.has(key)) {
+    return { ok:false, msg:"Najpierw dodaj tę część do katalogu części." };
+  }
+  if (!uiEditingMachineBom) uiEditingMachineBom = [];
+  const existing = uiEditingMachineBom.find(b => skuKey(b.sku) === key);
+  if (existing) existing.qty = q;
+  else uiEditingMachineBom.push({ sku: s, qty: q });
+  return { ok:true, msg:"Ustawiono w BOM (roboczo)." };
+}
+
 // ====== Nowa dostawa (lista części z cennika dostawcy) ======
 function supplierPriceForSku(supplierName, sku) {
   const sup = state.suppliers.get(supplierName);
@@ -965,13 +1084,18 @@ function renderBomSkuSelect() {
   const parts = Array.from(state.partsCatalog.values())
     .sort((a,b)=>a.name.localeCompare(b.name,"pl"));
   els.bomSkuSelect.innerHTML = parts.length
-    ? parts.map(p => `<option value="${escapeAttr(p.sku)}">${escapeHtml(p.name)} (${escapeHtml(p.sku)})</option>`).join("")
+    ? parts.map(p => `<option value="${escapeAttr(p.sku)}">${escapeHtml(p.sku)} (${escapeHtml(p.name)})</option>`).join("")
     : `<option value="">(dodaj części do katalogu)</option>`;
 }
 
 function getManagedMachine() {
-  const code = els.machineManageSelect?.value || "";
-  return state.machineCatalog.find(m => m.code === code) || null;
+  const code = uiEditingMachineCode || (els.machineManageSelect?.value || "");
+  const base = state.machineCatalog.find(m => m.code === code) || null;
+  if (!base) return null;
+  if (uiEditingMachineCode) {
+    return { ...base, bom: uiEditingMachineBom ? uiEditingMachineBom : (base.bom || []) };
+  }
+  return base;
 }
 
 function renderBomTable() {
@@ -999,15 +1123,31 @@ function renderMachinesCatalogTable() {
 
   els.machinesCatalogBody.innerHTML = rows.map(m => {
     const bomCount = (m.bom || []).length;
+    const isOpen = (uiEditingMachineCode === m.code);
     return `
-      <tr>
+      <tr class="${isOpen ? "noHover" : ""}">
         <td>${escapeHtml(m.name || "")}</td>
         <td><span class="badge">${escapeHtml(m.code || "")}</span></td>
         <td class="right">${bomCount}</td>
-        <td class="right"><button class="iconBtn" data-del-machine="${escapeHtml(m.code || "")}">Usuń</button></td>
+        <td class="right">
+          <button type="button" class="success" data-edit-machine="${escapeAttr(m.code || "")}" ${isOpen ? "disabled" : ""}>Edytuj</button>
+          <button type="button" class="secondary" data-del-machine="${escapeAttr(m.code || "")}">Usuń</button>
+        </td>
       </tr>
     `;
   }).join("");
+
+  // po renderze: jeśli edytujemy, podepnij edytor pod właściwy wiersz
+  if (uiEditingMachineCode && state.machineCatalog.some(x => x.code === uiEditingMachineCode)) {
+    const btns = els.machinesCatalogBody.querySelectorAll("button[data-edit-machine]");
+    for (const b of btns) {
+      if (b.dataset.editMachine === uiEditingMachineCode) {
+        const row = b.closest("tr");
+        if (row) mountMachineEditorAfter(row);
+        break;
+      }
+    }
+  }
 }
 
 function deleteMachine(code) {
@@ -1034,6 +1174,9 @@ function deleteMachine(code) {
       cancelText: "Anuluj"
     },
     () => {
+      if (uiEditingMachineCode && uiEditingMachineCode === code) {
+        unmountMachineEditor();
+      }
       state.machineCatalog.splice(idx, 1);
       saveState();
 
@@ -1551,14 +1694,21 @@ els.addBomItemBtn?.addEventListener("click", () => {
   const sku = els.bomSkuSelect.value;
   const qty = els.bomQtyInput.value;
 
-  const res = addBomItem(m.code, sku, qty);
+  // tryb inline (roboczy) vs klasyczny
+  const res = uiEditingMachineCode ? setBomItemInTemp(sku, qty) : addBomItem(m.code, sku, qty);
   if (!res.ok) return alert(res.msg);
 
   renderBomTable();
   renderMachinesCatalogTable();
-  saveState();
-  alert(res.msg);
+
+  if (!uiEditingMachineCode) {
+    saveState();
+    alert(res.msg);
+  } else {
+    toast("OK", res.msg, "ok", 1600);
+  }
 });
+
 
 els.bomBody?.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-del-bom]");
@@ -1569,17 +1719,32 @@ els.bomBody?.addEventListener("click", (e) => {
   if (!m) return;
 
   m.bom.splice(idx, 1);
+
   renderBomTable();
   renderMachinesCatalogTable();
-  saveState();
+
+  if (!uiEditingMachineCode) {
+    saveState();
+  } else {
+    toast("OK", "Usunięto z BOM (roboczo).", "ok", 1600);
+  }
 });
+
 
 
 els.machinesCatalogBody?.addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-del-machine]");
-  if (!btn) return;
-  deleteMachine(btn.dataset.delMachine);
+  const editBtn = e.target.closest("button[data-edit-machine]");
+  if (editBtn) {
+    openMachineEditor(editBtn.dataset.editMachine);
+    return;
+  }
+
+  const delBtn = e.target.closest("button[data-del-machine]");
+  if (delBtn) {
+    deleteMachine(delBtn.dataset.delMachine);
+  }
 });
+
 
 
 els.searchParts?.addEventListener("input", () => {
@@ -1795,6 +1960,9 @@ els.supplierEditorPartSelect?.addEventListener("change", () => {
 });
 els.supplierEditorSetPriceBtn?.addEventListener("click", setSupplierEditorPrice);
 els.supplierEditorSaveBtn?.addEventListener("click", commitSupplierEditor);
+els.machineEditorSaveBtn?.addEventListener("click", commitMachineEditor);
+els.machineEditorCancelBtn?.addEventListener("click", cancelMachineEditor);
+
 els.supplierEditorCancelBtn?.addEventListener("click", () => {
   unmountSupplierEditor();
   renderSuppliersList();

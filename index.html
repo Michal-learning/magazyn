@@ -362,7 +362,7 @@
 
   <div class="row">
     <label>
-      Część (Nazwa)
+      Część
       <select id="supplierEditorPartSelect"></select>
     </label>
     <label>
@@ -385,7 +385,7 @@
     </table>
   </div>
 
-  <div class="row" style="margin-top:10px">
+  <div class="editorActions" style="margin-top:10px">
     <button id="supplierEditorSaveBtn" type="button" class="success">Zapisz</button>
     <button id="supplierEditorCancelBtn" type="button" class="secondary">Anuluj</button>
   </div>
@@ -437,13 +437,23 @@
           </div>
         </div>
 
-        <div class="uiSection">
+        
+        <div id="machineEditorTemplate" class="uiSection" hidden>
           <div class="uiSectionHead">
             <h3>Edytuj maszynę i BOM</h3>
-            <span class="uiHint">Wybierz maszynę i dodawaj/usuń części</span>
+            <span class="uiHint">Dodawaj/usuń części</span>
           </div>
 
           <div class="row">
+            <div class="inlineMeta">
+              <span class="muted small">Maszyna:</span>
+              <strong id="machineEditorName">—</strong>
+              <span class="badge" id="machineEditorCode">—</span>
+            </div>
+          </div>
+
+          <!-- select techniczny dla istniejącej logiki (ukryty) -->
+          <div class="row" style="display:none">
             <label>
               Edytuj maszynę
               <select id="machineManageSelect"></select>
@@ -452,7 +462,7 @@
 
           <div class="row">
             <label>
-              Część (Nazwa)
+              Część
               <select id="bomSkuSelect"></select>
             </label>
 
@@ -481,9 +491,15 @@
           <p class="small muted">
             Wskazówka: jeśli nie ma jakiejś części na liście BOM, dodaj ją najpierw w „Katalog części (globalny)”.
           </p>
+
+          <div class="row rowActionsRight">
+            <button id="machineEditorSaveBtn" type="button" class="success">Zapisz</button>
+            <button id="machineEditorCancelBtn" type="button" class="secondary">Anuluj</button>
+          </div>
         </div>
 
-        <h3 class="subhead">Wszystkie maszyny</h3>
+
+        <div class="subhead">Wszystkie maszyny</div>
         <p class="small muted">
           Lista wszystkich maszyn z katalogu. Możesz je usuwać (jeśli nie są na magazynie i nie są dodane do bieżącej produkcji).
         </p>
@@ -498,13 +514,11 @@
                 <th class="right">Akcje</th>
               </tr>
             </thead>
-            <tbody></tbody>
+            <tbody id="machinesCatalogBody"></tbody>
           </table>
         </div>
       </div>
-
-  
-<!-- TAB: KONFIGURACJA -->
+    </section>
 
 <footer class="foot muted small">
             Wersja 0.4.
