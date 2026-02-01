@@ -239,7 +239,16 @@ bomBody: document.querySelector("#bomTable tbody"),
   supplierPriceInput: document.getElementById("supplierPriceInput"),
   setSupplierPriceBtn: document.getElementById("setSupplierPriceBtn"),
   supplierPriceBody: document.querySelector("#supplierPriceTable tbody"),
-  suppliersListBody: document.querySelector("#suppliersListTable tbody")
+  suppliersListBody: document.querySelector("#suppliersListTable tbody"),
+
+  supplierEditorTemplate: document.getElementById("supplierEditorTemplate"),
+  supplierEditorName: document.getElementById("supplierEditorName"),
+  supplierEditorPartSelect: document.getElementById("supplierEditorPartSelect"),
+  supplierEditorPriceInput: document.getElementById("supplierEditorPriceInput"),
+  supplierEditorSetPriceBtn: document.getElementById("supplierEditorSetPriceBtn"),
+  supplierEditorPriceBody: document.getElementById("supplierEditorPriceBody"),
+  supplierEditorSaveBtn: document.getElementById("supplierEditorSaveBtn"),
+  supplierEditorCancelBtn: document.getElementById("supplierEditorCancelBtn")
 };
 
 // ====== Utils ======
@@ -399,6 +408,136 @@ els.partsCatalogBody?.addEventListener("click", (e) => {
 });
 
 // ====== Dostawcy + cenniki ======
+// Inline edycja cennika dostawcy (rozsuwana pod wierszem)
+let uiEditingSupplier = null;
+let uiEditingPrices = null; // Map<partKey, price>
+let uiEditorHome = null;    // {parent, nextSibling}
+let uiEditorRow = null;     // <tr>
+
+function initSupplierEditorHome(){
+  if (!els.supplierEditorTemplate || uiEditorHome) return;
+  uiEditorHome = {
+    parent: els.supplierEditorTemplate.parentElement,
+    nextSibling: els.supplierEditorTemplate.nextElementSibling
+  };
+}
+
+function unmountSupplierEditor(){
+  if (!els.supplierEditorTemplate || !uiEditorHome) return;
+  els.supplierEditorTemplate.hidden = true;
+  if (uiEditorRow){
+    uiEditorRow.remove();
+    uiEditorRow = null;
+  }
+  const p = uiEditorHome.parent;
+  if (!p) return;
+  if (uiEditorHome.nextSibling && uiEditorHome.nextSibling.parentElement === p) {
+    p.insertBefore(els.supplierEditorTemplate, uiEditorHome.nextSibling);
+  } else {
+    p.appendChild(els.supplierEditorTemplate);
+  }
+  uiEditingSupplier = null;
+  uiEditingPrices = null;
+}
+
+function mountSupplierEditorAfter(rowEl){
+  if (!els.supplierEditorTemplate) return;
+  initSupplierEditorHome();
+  if (uiEditorRow) uiEditorRow.remove();
+
+  uiEditorRow = document.createElement("tr");
+  uiEditorRow.className = "inlineEditorRow";
+  uiEditorRow.innerHTML = `<td colspan="2"><div class="inlineEditorWrap"></div></td>`;
+  rowEl.parentElement.insertBefore(uiEditorRow, rowEl.nextElementSibling);
+  uiEditorRow.querySelector(".inlineEditorWrap").appendChild(els.supplierEditorTemplate);
+  els.supplierEditorTemplate.hidden = false;
+}
+
+function renderSupplierEditorPartDropdown(){
+  if (!els.supplierEditorPartSelect) return;
+  const parts = Array.from(state.partsCatalog.values()).sort((a,b)=>a.sku.localeCompare(b.sku,"pl"));
+  els.supplierEditorPartSelect.innerHTML = parts.length
+    ? parts.map(p => `<option value="${escapeAttr(p.sku)}">${escapeHtml(p.sku)} • ${escapeHtml(p.name)}</option>`).join("")
+    : `<option value="">(dodaj części do katalogu)</option>`;
+}
+
+function supplierEditorCurrentPartSku(){
+  const val = els.supplierEditorPartSelect?.value || "";
+  return val;
+}
+
+function syncSupplierEditorPriceInput(){
+  if (!uiEditingPrices || !els.supplierEditorPriceInput) return;
+  const sku = supplierEditorCurrentPartSku();
+  if (!sku) { els.supplierEditorPriceInput.value = "0"; return; }
+  const key = skuKey(sku);
+  const v = uiEditingPrices.has(key) ? uiEditingPrices.get(key) : 0;
+  els.supplierEditorPriceInput.value = String(v ?? 0);
+}
+
+function renderSupplierEditorPriceTable(){
+  if (!els.supplierEditorPriceBody) return;
+  if (!uiEditingSupplier || !uiEditingPrices) { els.supplierEditorPriceBody.innerHTML = ""; return; }
+  const rows = Array.from(uiEditingPrices.entries()).map(([skuLower, price]) => {
+    const part = state.partsCatalog.get(skuLower);
+    return { sku: part?.sku || skuLower.toUpperCase(), name: part?.name || skuLower.toUpperCase(), price };
+  }).sort((a,b)=>a.sku.localeCompare(b.sku,"pl"));
+
+  els.supplierEditorPriceBody.innerHTML = rows.map(r => `
+    <tr>
+      <td><span class="badge">${escapeHtml(r.sku)}</span></td>
+      <td>${escapeHtml(r.name)}</td>
+      <td class="right">${fmtPLN.format(r.price)}</td>
+    </tr>
+  `).join("");
+}
+
+function openSupplierEditor(name){
+  if (!state.suppliers.has(name)) return;
+  if (uiEditingSupplier === name){
+    unmountSupplierEditor();
+    renderSuppliersList();
+    return;
+  }
+  uiEditingSupplier = name;
+  uiEditingPrices = new Map(state.suppliers.get(name).prices);
+
+  if (els.supplierEditorName) els.supplierEditorName.textContent = name;
+  renderSupplierEditorPartDropdown();
+  syncSupplierEditorPriceInput();
+  renderSupplierEditorPriceTable();
+  renderSuppliersList();
+}
+
+function commitSupplierEditor(){
+  if (!uiEditingSupplier || !uiEditingPrices) return;
+  if (!state.suppliers.has(uiEditingSupplier)) return;
+  state.suppliers.get(uiEditingSupplier).prices = new Map(uiEditingPrices);
+  saveState();
+  // odśwież wszystko zależne od cenników
+  renderSupplierSelects();
+  renderPartsCatalogTable();
+  renderSupplierPartsForDelivery();
+  unmountSupplierEditor();
+  renderSuppliersList();
+  toast("Zapisano", `Cennik: ${uiEditingSupplier}`, "ok");
+}
+
+function setSupplierEditorPrice(){
+  if (!uiEditingSupplier || !uiEditingPrices) return;
+  const sku = supplierEditorCurrentPartSku();
+  if (!sku) return;
+  const key = skuKey(sku);
+  if (!state.partsCatalog.has(key)) {
+    toast("Błąd", "Najpierw dodaj część do katalogu.", "warn", 2800);
+    return;
+  }
+  const price = safePrice(els.supplierEditorPriceInput?.value, 0);
+  uiEditingPrices.set(key, price);
+  renderSupplierEditorPriceTable();
+  toast("OK", "Zmieniono cenę (roboczo).", "ok", 1600);
+}
+
 function ensureSupplier(name) {
   const n = String(name || "").trim();
   if (!n) return null;
@@ -592,6 +731,10 @@ function deleteSupplier(name) {
     () => {
       state.suppliers.delete(name);
 
+      if (uiEditingSupplier === name) {
+        unmountSupplierEditor();
+      }
+
       // jeśli był wybrany w dostawie, przestaw na pierwszy dostępny
       if (els.supplierSelect && els.supplierSelect.value === name) {
         const first = Array.from(state.suppliers.keys())[0] || "";
@@ -613,14 +756,31 @@ function renderSuppliersList() {
   if (!els.suppliersListBody) return;
 
   const names = Array.from(state.suppliers.keys()).sort((a,b)=>a.localeCompare(b,"pl"));
-  els.suppliersListBody.innerHTML = names.map(n => `
-    <tr>
-      <td>${escapeHtml(n)}</td>
-      <td class="right">
-        <button type="button" class="secondary" data-delete-supplier="${escapeAttr(n)}">Usuń</button>
-      </td>
-    </tr>
-  `).join("");
+  els.suppliersListBody.innerHTML = names.map(n => {
+    const isOpen = (uiEditingSupplier === n);
+    const editLabel = isOpen ? "Zamknij" : "Edytuj";
+    return `
+      <tr>
+        <td>${escapeHtml(n)}</td>
+        <td class="right">
+          <button type="button" class="success" data-edit-supplier="${escapeAttr(n)}">${editLabel}</button>
+          <button type="button" class="secondary" data-delete-supplier="${escapeAttr(n)}">Usuń</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  // po renderze: jeśli edytujemy, podepnij edytor pod właściwy wiersz
+  if (uiEditingSupplier && state.suppliers.has(uiEditingSupplier)) {
+    const btns = els.suppliersListBody.querySelectorAll("button[data-edit-supplier]");
+    for (const b of btns) {
+      if (b.dataset.editSupplier === uiEditingSupplier) {
+        const row = b.closest("tr");
+        if (row) mountSupplierEditorAfter(row);
+        break;
+      }
+    }
+  }
 }
 // ====== Nowa dostawa (lista części z cennika dostawcy) ======
 function supplierPriceForSku(supplierName, sku) {
@@ -1627,14 +1787,45 @@ els.setSupplierPriceBtn?.addEventListener("click", () => {
 });
 
 
-// lista dostawców: usuwanie (delegacja klików)
-els.suppliersListBody?.addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-delete-supplier]");
-  if (!btn) return;
-  const name = btn.dataset.deleteSupplier;
-  deleteSupplier(name);
+// lista dostawców: akcje (delegacja klików)
+
+// inline editor: eventy
+els.supplierEditorPartSelect?.addEventListener("change", () => {
+  syncSupplierEditorPriceInput();
+});
+els.supplierEditorSetPriceBtn?.addEventListener("click", setSupplierEditorPrice);
+els.supplierEditorSaveBtn?.addEventListener("click", commitSupplierEditor);
+els.supplierEditorCancelBtn?.addEventListener("click", () => {
+  unmountSupplierEditor();
+  renderSuppliersList();
 });
 
+els.suppliersListBody?.addEventListener("click", (e) => {
+  const del = e.target.closest("button[data-delete-supplier]");
+  if (del) {
+    const name = del.dataset.deleteSupplier;
+    deleteSupplier(name);
+    return;
+  }
+  const edit = e.target.closest("button[data-edit-supplier]");
+  if (edit) {
+    openSupplierEditor(edit.dataset.editSupplier);
+    return;
+  }
+});
+
+
+
+// inline edytor dostawcy: eventy
+els.supplierEditorPartSelect?.addEventListener("change", () => {
+  syncSupplierEditorPriceInput();
+});
+els.supplierEditorSetPriceBtn?.addEventListener("click", setSupplierEditorPrice);
+els.supplierEditorSaveBtn?.addEventListener("click", commitSupplierEditor);
+els.supplierEditorCancelBtn?.addEventListener("click", () => {
+  unmountSupplierEditor();
+  renderSuppliersList();
+});
 // ===== Tabs UI (Etap 1) =====
 (function initTabsUI(){
   const btns = Array.from(document.querySelectorAll("button[data-tab-target]"));

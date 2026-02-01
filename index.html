@@ -347,33 +347,33 @@
   </div>
 </div>
 
-<div class="uiSection">
+<div id="supplierEditorTemplate" class="uiSection" hidden>
   <div class="uiSectionHead">
     <h3>Edytuj dostawcę i cennik</h3>
-    <span class="uiHint">Wybierz dostawcę i ustaw ceny dla Nazw części</span>
+    <span class="uiHint">Wybierz część i ustaw ceny</span>
   </div>
 
   <div class="row">
-    <label>
-      Edytuj dostawcę
-      <select id="supplierManageSelect"></select>
-    </label>
+    <div class="summaryRow" style="width:100%">
+      <div class="muted small">Dostawca:</div>
+      <div><strong id="supplierEditorName">—</strong></div>
+    </div>
   </div>
 
   <div class="row">
     <label>
       Część (Nazwa)
-      <select id="supplierSkuSelect"></select>
+      <select id="supplierEditorPartSelect"></select>
     </label>
     <label>
       Cena (PLN/szt.)
-      <input id="supplierPriceInput" min="0" step="0.01" type="number" value="0"/>
+      <input id="supplierEditorPriceInput" min="0" step="0.01" type="number" value="0"/>
     </label>
-    <button id="setSupplierPriceBtn" type="button" class="compact">Ustaw cenę</button>
+    <button id="supplierEditorSetPriceBtn" type="button" class="compact">Ustaw cenę</button>
   </div>
 
   <div class="tableWrap">
-    <table id="supplierPriceTable">
+    <table>
       <thead>
         <tr>
           <th>Nazwa</th>
@@ -381,8 +381,13 @@
           <th class="right">Cena</th>
         </tr>
       </thead>
-      <tbody></tbody>
+      <tbody id="supplierEditorPriceBody"></tbody>
     </table>
+  </div>
+
+  <div class="row" style="margin-top:10px">
+    <button id="supplierEditorSaveBtn" type="button" class="success">Zapisz</button>
+    <button id="supplierEditorCancelBtn" type="button" class="secondary">Anuluj</button>
   </div>
 </div>
 

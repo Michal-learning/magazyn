@@ -1081,3 +1081,22 @@ button.compact{
   font-weight: 800;
   color: rgba(255,255,255,0.82);
 }
+
+/* ===== Supplier inline editor ===== */
+button.success{
+  background: rgba(33,202,162,0.14);
+  border-color: rgba(33,202,162,0.30);
+}
+button.success:hover{
+  background: rgba(33,202,162,0.20);
+  border-color: rgba(33,202,162,0.45);
+}
+.inlineEditorRow td{
+  padding: 0 !important;
+  border-bottom: none !important;
+}
+.inlineEditorWrap{
+  padding: 12px 12px 4px;
+  background: rgba(255,255,255,0.02);
+  border-top: 1px solid rgba(255,255,255,0.10);
+}
