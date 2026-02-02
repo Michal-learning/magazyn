@@ -297,6 +297,11 @@ tr:hover td {
     color: #ff8787;
 }
 
+/* Dodatek: wąskie tabele (dla małej liczby kolumn) */
+table.tightTable {
+    min-width: auto;
+}
+
 /* --- Components: Tabs --- */
 .tabsBar {
     display: flex;
@@ -629,7 +634,7 @@ tr:hover td {
 
 
 /* Readonly inputs look intentionally disabled but still consistent */
-input[readonly]{
+input[readonly] {
     opacity: 0.75;
     cursor: not-allowed;
 }
@@ -637,14 +642,4 @@ input[readonly]{
 
 .iconBtn.primary:hover {
     filter: brightness(1.05);
-}
-
-
-
-
-/* Defensive: jeśli kiedyś użyjesz iconBtn + success, nie rób czerwonego hovera */
-.iconBtn.success:hover {
-    background: rgba(33,202,162,0.25);
-    color: #21caa2;
-    border-color: rgba(33,202,162,0.3);
 }

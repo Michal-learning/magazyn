@@ -15,7 +15,7 @@ const state = {
 
     // Stan tymczasowy
     currentDelivery: { supplier: null, dateISO: "", items: [] },
-    currentBuild: { dateISO: "", items: [] } 
+    currentBuild: { dateISO: "", items: [] }
 };
 
 // Zmienne pomocnicze
@@ -146,13 +146,20 @@ function deletePart(skuRaw) {
 
 function addSupplier(name) {
     const n = normalize(name);
-    if (!n) return;
-    if (!state.suppliers.has(n)) {
-        state.suppliers.set(n, { prices: new Map() });
-        save();
-        renderAllSuppliers();
-        refreshCatalogsUI(); // Żeby odświeżyć listę checkboxów w "Nowa część"
+    if (!n) {
+        toast("Błąd", "Podaj nazwę dostawcy.", "warn");
+        return false;
     }
+    if (state.suppliers.has(n)) {
+        toast("Błąd", "Taki dostawca już istnieje.", "warn");
+        return false;
+    }
+    state.suppliers.set(n, { prices: new Map() });
+    save();
+    renderAllSuppliers();
+    refreshCatalogsUI();
+    toast("OK", "Dodano dostawcę.", "ok");
+    return true;
 }
 
 function deleteSupplier(name) {
@@ -279,7 +286,7 @@ function finalizeBuild(manualAllocation = null) {
             const lot = lotsClone.find(l => l.id == lotId);
             if (lot) {
                 lot.qty -= qty;
-                if (lot.qty < 0) return toast("Błąd", "Próba pobrania więcej niż w partii.", "bad");
+                if (lot.qty < 0) return toast("Błąd", "Próba pobrania więcej niż  w partii.", "bad");
             }
         }
     } else {
@@ -342,7 +349,8 @@ const els = {
     partsCatalog: document.querySelector("#partsCatalogTable tbody"),
     suppliersList: document.querySelector("#suppliersListTable tbody"),
     machinesCatalog: document.querySelector("#machinesCatalogTable tbody"),
-    machineSelect: document.getElementById('machineSelect'),};
+    machineSelect: document.getElementById('machineSelect'),
+};
 
 function renderWarehouse() {
     const q = normalize(document.getElementById("searchParts").value).toLowerCase();
@@ -350,60 +358,44 @@ function renderWarehouse() {
     let grandTotal = 0;
 
     // POPRAWKA: Wyszukiwanie obejmuje dostawcę
-    const filteredLots = state.lots.filter(l => 
-        !q || 
-        l.sku.toLowerCase().includes(q) || 
+    const filteredLots = state.lots.filter(l =>
+        !q ||
+        l.sku.toLowerCase().includes(q) ||
         l.name.toLowerCase().includes(q) ||
-        (l.supplier && l.supplier.toLowerCase().includes(q))
+        (l.supplier || "").toLowerCase().includes(q)
     );
 
-    els.partsTable.innerHTML = filteredLots.map(l => {
-        const val = l.qty * l.unitPrice;
-        grandTotal += val;
-        
-        const k = skuKey(l.sku);
-        // POPRAWKA: Pobieramy aktualną nazwę z katalogu (synchronizacja)
-        const catalogPart = state.partsCatalog.get(k);
-        const displayName = catalogPart ? catalogPart.name : l.name;
+    filteredLots.forEach(lot => {
+        const key = skuKey(lot.sku);
+        summary.set(key, summary.get(key) || { sku: lot.sku, name: lot.name, qty: 0, value: 0 });
+        summary.get(key).qty += lot.qty;
+        summary.get(key).value += lot.qty * (lot.unitPrice || 0);
+    });
 
-        if (!summary.has(k)) {
-            summary.set(k, {
-                sku: l.sku, 
-                name: displayName, 
-                qty: 0, 
-                val: 0
-            });
-        }
-        
-        const s = summary.get(k);
-        s.qty += l.qty;
-        s.val += val;
+    els.partsTable.innerHTML = filteredLots.map(lot => `
+        <tr>
+            <td><span class="badge">${lot.sku}</span> ${lot.name}</td>
+            <td>${lot.supplier || "-"}</td>
+            <td class="right">${fmtPLN.format(lot.unitPrice || 0)}</td>
+            <td class="right">${lot.qty}</td>
+            <td class="right">${fmtPLN.format(lot.qty * (lot.unitPrice || 0))}</td>
+        </tr>
+    `).join("");
 
-        return `<tr>
-            <td><strong>${displayName}</strong><br><small class="muted">${l.sku}</small></td>
-            <td>${l.supplier || "-"}</td>
-            <td class="right">${fmtPLN.format(l.unitPrice)}</td>
-            <td class="right">${l.qty}</td>
-            <td class="right">${fmtPLN.format(val)}</td>
-        </tr>`;
-    }).join("");
+    summary.forEach(item => {
+        grandTotal += item.value;
+    });
+
+    els.summaryTable.innerHTML = Array.from(summary.values()).map(item => `
+        <tr class="${ item.qty <= LOW_DANGER ? "stock-danger" : item.qty <= LOW_WARN ? "stock-warn" : "" }">
+            <td><span class="badge">${item.sku}</span></td>
+            <td>${item.name}</td>
+            <td class="right">${item.qty}</td>
+            <td class="right">${fmtPLN.format(item.value)}</td>
+        </tr>
+    `).join("");
 
     els.whTotal.textContent = fmtPLN.format(grandTotal);
-
-    els.summaryTable.innerHTML = Array.from(summary.values())
-        .sort((a,b) => a.sku.localeCompare(b.sku))
-        .map(s => {
-            let cls = "";
-            if (s.qty < LOW_DANGER) cls = "stock-danger";
-            else if (s.qty < LOW_WARN) cls = "stock-warn";
-            
-            return `<tr class="${cls}">
-                <td><span class="badge">${s.sku}</span></td>
-                <td>${s.name}</td>
-                <td class="right"><strong>${s.qty}</strong></td>
-                <td class="right">${fmtPLN.format(s.val)}</td>
-            </tr>`;
-        }).join("");
 }
 
 function renderDelivery() {
@@ -444,7 +436,7 @@ function renderBuild() {
 
 function renderMissingParts(missing) {
     els.missingBox.hidden = false;
-    document.getElementById("missingList").innerHTML = missing.map(m => 
+    document.getElementById("missingList").innerHTML = missing.map(m =>
         `<li><strong>${m.sku}</strong>: Potrzeba ${m.needed}, stan: ${m.has} (brak: ${m.needed - m.has})</li>`
     ).join("");
 }
@@ -476,7 +468,7 @@ function renderManualConsume() {
             ${lots.map(lot => `
                 <div class="lotRow">
                     <span>${lot.supplier} (${fmtPLN.format(lot.unitPrice)}) - Dostępne: ${lot.qty}</span>
-                    <input type="number" class="manual-lot-input" 
+                    <input type="number" class="manual-lot-input"
                         data-lot-id="${lot.id}" 
                         data-sku="${skuKeyStr}"
                         max="${lot.qty}" min="0" value="0">
@@ -507,7 +499,7 @@ function renderAllSuppliers() {
             <td>${name}</td>
             <td class="right">
                 <button class="success compact" onclick="openSupplierEditor('${name}')">Cennik</button>
-                <button class="secondary compact" onclick="askDeleteSupplier('${name}')">Usuń</button>
+                <button class="iconBtn" onclick="askDeleteSupplier('${name}')">Usuń</button>
             </td>
         </tr>
     `).join("");
@@ -543,7 +535,7 @@ function refreshCatalogsUI() {
             <td class="right">${m.bom.length}</td>
             <td class="right">
                 <button class="success compact" onclick="openMachineEditor('${m.code}')">Edytuj BOM</button>
-                <button class="secondary compact" onclick="askDeleteMachine('${m.code}')">Usuń</button>
+                <button class="iconBtn" onclick="askDeleteMachine('${m.code}')">Usuń</button>
             </td>
         </tr>
     `).join("");
@@ -615,13 +607,21 @@ function init() {
     // Edycja części (Baza Części)
     document.getElementById("saveEditPartBtn")?.addEventListener("click", saveEditPart);
     document.getElementById("cancelEditPartBtn")?.addEventListener("click", cancelEditPart);
-
 }
 
-// EVENTS
+ // EVENTS
 
 // --- Delivery ---
 document.getElementById("supplierSelect").addEventListener("change", (e) => {
+  if (state.currentDelivery.items.length > 0 && state.currentDelivery.supplier && state.currentDelivery.supplier !== e.target.value) {
+    if (!confirm("Zmiana dostawcy spowoduje usunięcie bieżących pozycji dostawy. Kontynuować?")) {
+      e.target.value = state.currentDelivery.supplier || "";
+      return;
+    }
+    state.currentDelivery.items = [];
+    state.currentDelivery.supplier = e.target.value;
+    renderDelivery();
+  }
   const supName = e.target.value;
   const skuSelect = document.getElementById("supplierPartsSelect");
 
@@ -685,7 +685,10 @@ window.removeDeliveryItem = (id) => {
 // --- Build ---
 document.getElementById("addBuildItemBtn").addEventListener("click", () => {
     const code = els.machineSelect.value;
-    if (!code) return;
+    if (!code) {
+        toast("Błąd", "Wybierz maszynę.", "warn");
+        return;
+    }
     const qty = safeInt(document.getElementById("buildQty").value);
     
     state.currentBuild.items.push({ id: nextId(), machineCode: code, qty });
@@ -766,21 +769,36 @@ window.askDeletePart = (sku) => {
 };
 
 document.getElementById("addSupplierBtn").addEventListener("click", () => {
-    addSupplier(document.getElementById("supplierNameInput").value);
-    document.getElementById("supplierNameInput").value = "";
+    const name = document.getElementById("supplierNameInput").value;
+    const added = addSupplier(name);
+    if (added) {
+        document.getElementById("supplierNameInput").value = "";
+    }
 });
-window.askDeleteSupplier = (n) => { if(confirm("Usunąć dostawcę " + n + "?")) deleteSupplier(n); };
+window.askDeleteSupplier = (n) => { if(confirm("Czy na pewno usunąć dostawcę " + n + "?")) deleteSupplier(n); };
 
 document.getElementById("addMachineBtn").addEventListener("click", () => {
     const c = normalize(document.getElementById("machineCodeInput").value);
     const n = normalize(document.getElementById("machineNameInput").value);
-    if (!c || !n) return;
+    if (!c || !n) {
+        toast("Błąd", "Podaj kod i nazwę maszyny.", "warn");
+        return;
+    }
+    if (state.machineCatalog.some(m => m.code === c)) {
+        toast("Błąd", "Maszyna o podanym kodzie już istnieje.", "warn");
+        return;
+    }
     state.machineCatalog.push({code: c, name: n, bom: []});
     save(); refreshCatalogsUI();
+    document.getElementById("machineCodeInput").value = "";
+    document.getElementById("machineNameInput").value = "";
+    toast("OK", "Dodano maszynę.", "ok");
 });
 window.askDeleteMachine = (code) => {
-    state.machineCatalog = state.machineCatalog.filter(m => m.code !== code);
-    save(); refreshCatalogsUI();
+    if(confirm("Czy na pewno usunąć maszynę " + code + "?")) {
+        state.machineCatalog = state.machineCatalog.filter(m => m.code !== code);
+        save(); refreshCatalogsUI();
+    }
 };
 
 // --- Editors Inline ---
@@ -793,7 +811,7 @@ window.openSupplierEditor = (name) => {
     document.getElementById("supplierEditorName").textContent = name;
     
     const sel = document.getElementById("supplierEditorPartSelect");
-    sel.innerHTML = Array.from(state.partsCatalog.values()).map(p => 
+    sel.innerHTML = '<option value="">-- Wybierz --</option>' + Array.from(state.partsCatalog.values()).map(p =>
         `<option value="${p.sku}">${p.sku} (${p.name})</option>`
     ).join("");
     
@@ -820,11 +838,13 @@ document.getElementById("supplierEditorSetPriceBtn").addEventListener("click", (
 
 document.getElementById("supplierEditorSaveBtn").addEventListener("click", () => {
     document.getElementById("supplierEditorTemplate").hidden = true;
+    editingSup = null;
     renderAllSuppliers();
     refreshCatalogsUI();
 });
 document.getElementById("supplierEditorCancelBtn").addEventListener("click", () => {
     document.getElementById("supplierEditorTemplate").hidden = true;
+    editingSup = null;
 });
 
 window.openMachineEditor = (code) => {
@@ -836,7 +856,7 @@ window.openMachineEditor = (code) => {
     document.getElementById("machineEditorCode").textContent = code;
     
     const sel = document.getElementById("bomSkuSelect");
-    sel.innerHTML = Array.from(state.partsCatalog.values()).map(p => 
+    sel.innerHTML = '<option value="">-- Wybierz --</option>' + Array.from(state.partsCatalog.values()).map(p =>
         `<option value="${p.sku}">${p.sku} (${p.name})</option>`
     ).join("");
 
@@ -860,6 +880,10 @@ function renderBomTable() {
 
 document.getElementById("addBomItemBtn").addEventListener("click", () => {
     const sku = document.getElementById("bomSkuSelect").value;
+    if (!sku) {
+        toast("Błąd", "Wybierz część do składu.", "warn");
+        return;
+    }
     const qty = safeInt(document.getElementById("bomQtyInput").value);
     
     const existing = editingMachine.bom.find(b => skuKey(b.sku) === skuKey(sku));
@@ -877,11 +901,13 @@ window.removeBomItem = (idx) => {
 document.getElementById("machineEditorSaveBtn").addEventListener("click", () => {
     save();
     document.getElementById("machineEditorTemplate").hidden = true;
+    editingMachine = null;
     refreshCatalogsUI();
 });
 document.getElementById("machineEditorCancelBtn").addEventListener("click", () => {
     document.getElementById("machineEditorTemplate").hidden = true;
-    load(); 
+    load();
+    editingMachine = null;
 });
 
 // Common Bindings
@@ -889,6 +915,17 @@ function bindTabs() {
     const btns = document.querySelectorAll(".tabBtn");
     btns.forEach(btn => {
         btn.addEventListener("click", () => {
+            if (editingMachine) {
+                document.getElementById("machineEditorCancelBtn")?.click();
+                editingMachine = null;
+            }
+            if (!document.getElementById("supplierEditorTemplate").hidden) {
+                document.getElementById("supplierEditorCancelBtn")?.click();
+                editingSup = null;
+            }
+            if (!document.getElementById("partEditSection").hidden) {
+                document.getElementById("cancelEditPartBtn")?.click();
+            }
             btns.forEach(b => b.classList.remove("active"));
             btn.classList.add("active");
             document.querySelectorAll(".tabPanel").forEach(p => p.hidden = true);
@@ -1021,4 +1058,3 @@ function saveEditPart() {
     cancelEditPart();
     toast("Zapisano zmiany części.");
 }
-
