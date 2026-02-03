@@ -154,9 +154,79 @@ h2 {
     align-items: start;
 }
 
+/* Widok magazynu części: przełączanie (Kompakt / Partie) */
+.partsSplit[data-view="compact"],
+.partsSplit[data-view="batches"] {
+    grid-template-columns: 1fr;
+}
+
+.partsSplit[data-view="compact"] .splitCol--batches {
+    display: none;
+}
+
+.partsSplit[data-view="batches"] .splitCol--compact {
+    display: none;
+}
+
 @media (max-width: 900px) {
     .partsSplit {
         grid-template-columns: 1fr;
+    }
+}
+
+/* Toolbar magazynu części (search + widok) */
+.warehouseToolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    margin: 8px 0 12px;
+}
+
+.warehouseToolbar input[type="text"] {
+    min-width: 240px;
+    flex: 1 1 auto;
+}
+
+.viewToggle {
+    display: inline-flex;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-2);
+    gap: 4px;
+    flex: 0 0 auto;
+}
+
+.segBtn {
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    padding: 8px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background var(--trans-fast), color var(--trans-fast), border-color var(--trans-fast);
+}
+
+.segBtn:hover {
+    background: var(--secondary-hover);
+    color: var(--text);
+}
+
+.segBtn.active {
+    background: var(--secondary-bg);
+    border-color: var(--border);
+    color: var(--text);
+    box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.10);
+}
+
+@media (max-width: 900px) {
+    .warehouseToolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .viewToggle {
+        width: fit-content;
     }
 }
 
@@ -722,6 +792,91 @@ input[readonly] {
 .sideBtn {
     width: 100%;
     justify-content: center;
+}
+
+/* Sidebar metric: Warehouse total */
+.sideMetricRow {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-2);
+}
+
+.sideMetricValue {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+
+/* Sidebar mini lists */
+.sideMiniTitle {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-weight: 650;
+    margin: 0 0 8px;
+}
+
+.sideList {
+    margin: 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 6px;
+}
+
+.sideList li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-2);
+    list-style-position: inside;
+}
+
+.sideList .sideItemMain {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.sideList .sideItemTop {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.sideList .sideItemTop .badge {
+    flex: 0 0 auto;
+}
+
+.sideList .sideItemTop span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sideList .sideItemMeta {
+    font-size: 0.78rem;
+    color: var(--muted);
+}
+
+.sideList .sideQty {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--secondary-bg);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 700;
 }
 
 

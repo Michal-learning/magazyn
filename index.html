@@ -86,12 +86,17 @@
                         </div>
                     </div>
 
-                    <div class="toolbar">
-                        <input id="searchParts" placeholder="Szukaj po Nazwie lub Typie..." type="text" autocomplete="off" />
+                    <div class="toolbar warehouseToolbar">
+                        <input id="searchParts" placeholder="Szukaj po Nazwie, Typie lub Dostawcy..." type="text" autocomplete="off" />
+
+                        <div class="viewToggle" role="tablist" aria-label="Widok magazynu części">
+                            <button id="partsViewCompactBtn" class="segBtn" type="button" data-view="compact" aria-selected="true">Kompakt</button>
+                            <button id="partsViewBatchesBtn" class="segBtn" type="button" data-view="batches" aria-selected="false">Partie</button>
+                        </div>
                     </div>
 
-                    <div class="partsSplit">
-                        <section class="splitCol">
+                    <div class="partsSplit" id="partsSplit" data-view="compact">
+                        <section class="splitCol splitCol--compact">
                             <h3 class="subhead">Podsumowanie (wg Nazwy/ID)</h3>
                             <div class="tableWrap">
                                 <table id="skuSummaryTable" class="tightTable stickyHeader">
@@ -108,14 +113,9 @@
                             </div>
                         </section>
 
-                        <section class="splitCol">
+                        <section class="splitCol splitCol--batches">
                             <h3 class="subhead">Szczegóły Partii (FIFO)</h3>
                             <div class="tableWrap">
-                                <div class="summaryRow">
-                                    <div class="muted small">Wartość całkowita:</div>
-                                    <div class="right"><strong id="warehouseTotal">0,00 zł</strong></div>
-                                </div>
-
                                 <table id="partsTable" class="tightTable stickyHeader">
                                     <thead>
                                         <tr>
@@ -281,9 +281,9 @@
                         <table id="machinesStockTable">
                             <thead>
                                 <tr>
-                                    <th>Nazwa Maszyny (ID)</th>
-                                    <th>Typ (Nazwa handlowa)</th>
-                                    <th class="right">Magazyn Części</th>
+                                    <th>Kod</th>
+                                    <th>Nazwa</th>
+                                    <th class="right">Ilość</th>
                                 </tr>
                             </thead>
                             <tbody></tbody>
@@ -561,20 +561,36 @@
                 </div>
 
                 <div class="sideSection">
+                    <div class="sideTitle">Magazyn części</div>
+                    <div class="sideMetricRow" aria-label="Wartość całkowita magazynu części">
+                        <div class="muted small">Wartość całkowita</div>
+                        <div class="sideMetricValue"><strong id="warehouseTotal">0,00 zł</strong></div>
+                    </div>
+                </div>
+
+                <div class="sideSection">
                     <div class="sideTitle">Szybkie akcje</div>
                     <button id="themeToggleBtn" type="button" class="secondary sideBtn">Tryb: Ciemny</button>
                 </div>
 
                 <div class="sideSection">
                     <div class="sideTitle">Info</div>
-                    <p class="small muted" style="margin:0">
-                        Tu później wrzucisz: braki, ostatnie akcje, skróty.
-                    </p>
+                    <div class="sideMini">
+                        <div class="sideMiniTitle">Top 5 braków (części)</div>
+                        <ol class="sideList" id="sideMissingList" aria-label="Top 5 braków części"></ol>
+                    </div>
+
+                    <div class="sideMini" style="margin-top:12px">
+                        <div class="sideMiniTitle">Ostatnie akcje (5)</div>
+                        <ol class="sideList" id="sideRecentActions" aria-label="5 ostatnich akcji"></ol>
+                    </div>
                 </div>
             </div>
         </aside>
 
     </main>
-    <script src="script.js"></script>
+    <script src="app-core.js"></script>
+    <script src="app-ui.js"></script>
+    <script src="app-init.js"></script>
 </body>
 </html>
