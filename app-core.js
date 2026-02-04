@@ -112,13 +112,54 @@ function serializeState() {
 
 function restoreState(data) {
     if (!data) return;
-    state.lots = data.lots || [];
-    state.machinesStock = data.machinesStock || [];
-    state.machineCatalog = data.machineCatalog || [];
+
+    // Defensive restore: old/corrupted localStorage should not crash the app or poison invariants.
+    // We normalize only what we must (qty >= 0, numbers finite, arrays/maps shape). No schema changes.
+    const asArr = (x) => Array.isArray(x) ? x : [];
+
+    state.lots = asArr(data.lots).map(l => ({
+        id: (typeof l?.id === "number") ? l.id : nextId(), // keep stable if possible
+        sku: normalize(l?.sku),
+        name: normalize(l?.name),
+        supplier: normalize(l?.supplier) || "-",
+        unitPrice: safeFloat(l?.unitPrice ?? 0),
+        qty: safeQtyInt(l?.qty),
+        dateIn: normalize(l?.dateIn)
+    })).filter(l => l.sku && l.name); // minimal: require identity fields
+
+    state.machinesStock = asArr(data.machinesStock).map(m => ({
+        code: normalize(m?.code),
+        name: normalize(m?.name),
+        qty: safeQtyInt(m?.qty)
+    })).filter(m => m.code);
+
+    state.machineCatalog = asArr(data.machineCatalog).map(m => ({
+        code: normalize(m?.code),
+        name: normalize(m?.name),
+        bom: asArr(m?.bom).map(b => ({
+            sku: normalize(b?.sku),
+            qty: safeInt(b?.qty) // BOM is required >= 1
+        })).filter(b => b.sku)
+    })).filter(m => m.code && m.name);
+
     state.currentDelivery = data.currentDelivery || { supplier: null, dateISO: "", items: [] };
+    state.currentDelivery.items = asArr(state.currentDelivery.items).map(i => ({
+        id: (typeof i?.id === "number") ? i.id : nextId(),
+        sku: normalize(i?.sku),
+        name: normalize(i?.name),
+        qty: safeInt(i?.qty),
+        price: safeFloat(i?.price)
+    })).filter(i => i.sku);
+
     state.currentBuild = data.currentBuild || { dateISO: "", items: [] };
-    state.history = data.history || [];
-    
+    state.currentBuild.items = asArr(state.currentBuild.items).map(i => ({
+        id: (typeof i?.id === "number") ? i.id : nextId(),
+        machineCode: normalize(i?.machineCode),
+        qty: safeInt(i?.qty)
+    })).filter(i => i.machineCode);
+
+    state.history = asArr(data.history).filter(Boolean);
+
     LOW_WARN = data.LOW_WARN ?? 100;
     LOW_DANGER = data.LOW_DANGER ?? 50;
 
@@ -127,6 +168,7 @@ function restoreState(data) {
     (data.suppliers || []).forEach(s => {
         state.suppliers.set(s.name, { prices: new Map(s.prices || []) });
     });
+
     syncIdCounter();
 }
 
@@ -160,6 +202,12 @@ const safeFloat = (val) => {
 };
 
 const safeInt = (val) => Math.max(1, parseInt(val) || 1);
+// NOTE: quantities in stock can be 0 when data is corrupted/imported; we normalize to integer >= 0.
+// Keep safeInt() as >=1 for user-entered required quantities (delivery/build/BOM).
+const safeQtyInt = (val) => {
+    const n = parseInt(val, 10);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+};
 
 // DOM helpers (defensive, minimal)
 const byId = (id) => document.getElementById(id);
@@ -372,10 +420,12 @@ function finalizeBuild(manualAllocation = null) {
     if (manualAllocation) {
         for (const [lotId, qty] of Object.entries(manualAllocation)) {
             const lot = lotsClone.find(l => l.id == lotId);
-            if (lot) {
-                lot.qty -= qty;
-                if (lot.qty < 0) return toast("Błąd", "Próba pobrania więcej niż  w partii.", "bad");
-            }
+            if (!lot) continue;
+
+            // Manual allocation is user-input driven: enforce integer >= 0 and never overdraw a lot.
+            const take = safeQtyInt(qty);
+            if (take > lot.qty) return toast("Błąd", "Próba pobrania więcej niż jest w partii.", "bad"); // invariant: qty >= 0
+            lot.qty -= take;
         }
     } else {
         for (const [k, qtyNeeded] of requirements.entries()) {

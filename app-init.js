@@ -19,6 +19,8 @@ function setWarehouseView(view) {
     }
 
     localStorage.setItem(WAREHOUSE_VIEW_KEY, v);
+
+    renderWarehouse();
 }
 
 function initWarehouseViewToggle() {
@@ -270,7 +272,7 @@ document.getElementById("finalizeBuildBtn")?.addEventListener("click", () => {
         const currentSum = new Map();
         
         inputs.forEach(inp => {
-            const val = safeFloat(inp.value);
+            const val = safeQtyInt(inp.value);
             if (val > 0) {
                 manualAlloc[inp.dataset.lotId] = val;
                 const k = inp.dataset.sku;
@@ -612,7 +614,6 @@ function saveEditPart() {
             const shouldHave = checked.has(supName);
 
             if (shouldHave && !has) {
-                // dodaj z ceną 0 jako start (użytkownik może potem edytować cennik)
                 sup.prices.set(currentEditPartKey, 0);
             } else if (!shouldHave && has) {
                 sup.prices.delete(currentEditPartKey);

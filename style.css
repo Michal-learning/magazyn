@@ -154,79 +154,9 @@ h2 {
     align-items: start;
 }
 
-/* Widok magazynu części: przełączanie (Kompakt / Partie) */
-.partsSplit[data-view="compact"],
-.partsSplit[data-view="batches"] {
-    grid-template-columns: 1fr;
-}
-
-.partsSplit[data-view="compact"] .splitCol--batches {
-    display: none;
-}
-
-.partsSplit[data-view="batches"] .splitCol--compact {
-    display: none;
-}
-
 @media (max-width: 900px) {
     .partsSplit {
         grid-template-columns: 1fr;
-    }
-}
-
-/* Toolbar magazynu części (search + widok) */
-.warehouseToolbar {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    justify-content: space-between;
-    margin: 8px 0 12px;
-}
-
-.warehouseToolbar input[type="text"] {
-    min-width: 240px;
-    flex: 1 1 auto;
-}
-
-.viewToggle {
-    display: inline-flex;
-    padding: 4px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface-2);
-    gap: 4px;
-    flex: 0 0 auto;
-}
-
-.segBtn {
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--muted);
-    padding: 8px 12px;
-    border-radius: 999px;
-    cursor: pointer;
-    transition: background var(--trans-fast), color var(--trans-fast), border-color var(--trans-fast);
-}
-
-.segBtn:hover {
-    background: var(--secondary-hover);
-    color: var(--text);
-}
-
-.segBtn.active {
-    background: var(--secondary-bg);
-    border-color: var(--border);
-    color: var(--text);
-    box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.10);
-}
-
-@media (max-width: 900px) {
-    .warehouseToolbar {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    .viewToggle {
-        width: fit-content;
     }
 }
 
@@ -794,91 +724,6 @@ input[readonly] {
     justify-content: center;
 }
 
-/* Sidebar metric: Warehouse total */
-.sideMetricRow {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 12px 12px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface-2);
-}
-
-.sideMetricValue {
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-    white-space: nowrap;
-}
-
-/* Sidebar mini lists */
-.sideMiniTitle {
-    font-size: 0.8rem;
-    color: var(--muted);
-    font-weight: 650;
-    margin: 0 0 8px;
-}
-
-.sideList {
-    margin: 0;
-    padding-left: 18px;
-    display: grid;
-    gap: 6px;
-}
-
-.sideList li {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface-2);
-    list-style-position: inside;
-}
-
-.sideList .sideItemMain {
-    min-width: 0;
-    display: grid;
-    gap: 2px;
-}
-
-.sideList .sideItemTop {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-}
-
-.sideList .sideItemTop .badge {
-    flex: 0 0 auto;
-}
-
-.sideList .sideItemTop span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.sideList .sideItemMeta {
-    font-size: 0.78rem;
-    color: var(--muted);
-}
-
-.sideList .sideQty {
-    flex: 0 0 auto;
-    font-variant-numeric: tabular-nums;
-    padding: 4px 8px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--secondary-bg);
-    color: var(--text);
-    font-size: 0.85rem;
-    font-weight: 700;
-}
-
 
 /* === LIGHT MODE — calm, enterprise, long-use === */
 :root[data-theme="light"] {
@@ -1087,3 +932,437 @@ tr.historyDetailRow:hover td {
         .thresholds.slidePanel.collapsed * {
             pointer-events: none;
         }
+
+/* =========================================================
+   UI/UX Selected Improvements Patch
+   Implements: #3, #6, #7, #8, #9, #10, #12
+   Paste at END of style.css
+   ========================================================= */
+
+/* === #3 Typography hierarchy polish (H2 screen, H3 section, .subhead context) === */
+h2 {
+    font-size: 1.3rem;
+    line-height: 1.2;
+    margin-bottom: 10px;
+}
+
+h3 {
+    font-size: 1.05rem;
+    line-height: 1.25;
+}
+
+.subhead {
+    font-size: 0.95rem;
+    line-height: 1.25;
+    margin: 16px 0 10px;
+    font-weight: 650;
+}
+
+/* Prevent double spacing when H2 sits inside cardHeader */
+.cardHeader h2 {
+    margin-bottom: 0;
+}
+
+/* UI section headers should feel like “section”, not “page title” */
+.uiSectionHead h3 {
+    font-size: 1rem;
+}
+
+
+/* === #6 Form vs List separation (calm, no new layout) === */
+.uiSection {
+    background: var(--section-bg);
+}
+
+    .uiSection.listSection {
+        background: var(--surface-2);
+    }
+
+        .uiSection.listSection .tableWrap {
+            background: var(--table-bg);
+        }
+
+
+/* === #7 Button clarity: secondary vs success === */
+button.secondary {
+    background: var(--secondary-bg);
+    border-color: var(--border);
+    color: var(--text);
+}
+
+    button.secondary:hover:not(:disabled) {
+        background: var(--secondary-hover);
+    }
+
+/* Success: more clearly affirmative, still enterprise-calm */
+button.success {
+    background: rgba(33,202,162,0.12);
+    color: var(--success);
+    border-color: rgba(33,202,162,0.45);
+    box-shadow: 0 0 0 0 rgba(33,202,162,0);
+}
+
+    button.success:hover:not(:disabled) {
+        background: rgba(33,202,162,0.20);
+        border-color: rgba(33,202,162,0.60);
+    }
+
+:root[data-theme="light"] button.success {
+    background: rgba(33,202,162,0.10);
+    border-color: rgba(33,202,162,0.38);
+}
+
+
+/* === #8 Tabs: stronger grouping with minimal styling === */
+.tabGroup {
+    padding: 4px 6px;
+    border-radius: 12px;
+}
+
+.tabGroupButtons {
+    padding: 2px;
+    border-radius: 999px;
+}
+
+/* Modern Chrome supports :has(); if not, this simply won't apply (safe fallback) */
+.tabGroup:has(.tabBtn.active) {
+    background: var(--section-bg);
+    border: 1px solid var(--border);
+}
+
+.tabDivider {
+    opacity: 0.8;
+}
+
+
+/* === #9 Side panel: clearer hierarchy, still calm === */
+.globalSide .cardHeader {
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+    .globalSide .cardHeader h2 {
+        font-size: 1.1rem;
+    }
+
+.sideTitle {
+    color: var(--sideTitle);
+    font-weight: 650;
+}
+
+.sideSection {
+    gap: 10px;
+}
+
+
+/* === #10 Spacing rhythm: more predictable vertical flow === */
+.cardHeader {
+    margin-bottom: 16px;
+}
+
+.toolbar {
+    margin: 12px 0 16px;
+}
+
+.row {
+    margin-bottom: 16px;
+}
+
+.uiSection {
+    margin-bottom: 18px;
+}
+
+.partsSplit {
+    gap: 18px;
+}
+
+.deliveryActions {
+    margin-top: 18px;
+}
+
+
+/* === #12 Empty states for tables (CSS-only, no JS) === */
+.tableWrap {
+    position: relative;
+}
+
+    /* When tbody is empty, show a subtle message */
+    .tableWrap:has(tbody:empty) {
+        min-height: 120px;
+    }
+
+        /* Overlay message */
+        .tableWrap:has(tbody:empty)::after {
+            content: "Brak danych do wyświetlenia";
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            padding: 14px;
+            color: var(--muted);
+            font-size: 0.9rem;
+            pointer-events: none;
+        }
+
+        /* Keep header visible; avoid harsh contrast with overlay */
+        .tableWrap:has(tbody:empty) table {
+            opacity: 0.98;
+        }
+
+/* --- Parts view toggle (Podsumowanie / Szczegóły) --- */
+.partsToolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+    .partsToolbar input {
+        flex: 1 1 auto;
+        min-width: 220px;
+    }
+
+/* segmented control */
+.segmented {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    background: var(--secondary-bg);
+    border-radius: 999px;
+    padding: 2px;
+    gap: 2px;
+    flex: 0 0 auto;
+}
+
+    .segmented > button {
+        border-radius: 999px;
+        border: 1px solid transparent;
+        background: transparent;
+    }
+
+        .segmented > button.active {
+            background: var(--accent);
+            color: #fff;
+            box-shadow: 0 4px 14px var(--accent-glow);
+        }
+
+/* Only one table visible at a time */
+#partsSplit[data-view="compact"] .splitCol--batches {
+    display: none;
+}
+
+#partsSplit[data-view="batches"] .splitCol--compact {
+    display: none;
+}
+
+.batchGroupRow .batchMeta {
+    margin-top: 2px;
+}
+
+.batchGroupRow .batchTop {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+}
+
+.batchDetailRow .batchDetailIndent {
+    padding-left: 18px;
+}
+
+.batchDetailRow td {
+    opacity: 0.95;
+}
+
+.batchDetailRow .badge {
+    transform: scale(0.95);
+    transform-origin: left center;
+}
+
+/* === FIX: Parts split should become single-column when one panel is hidden === */
+#partsSplit[data-view="compact"],
+#partsSplit[data-view="batches"] {
+    grid-template-columns: 1fr !important;
+}
+
+/* (opcjonalnie) większy “oddech” tabel w magazynie */
+#partsSplit .tableWrap {
+    width: 100%;
+}
+
+/* ===== Sidebar polish ===== */
+.globalSide .card.stickySide {
+    padding: 14px;
+}
+
+.globalSide .sideSection {
+    padding: 12px 0;
+}
+
+    .globalSide .sideSection + .sideSection {
+        border-top: 1px solid rgba(255,255,255,0.08);
+    }
+
+.globalSide .sideTitle {
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+}
+
+/* KPI tile */
+.sideMetric {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 6px 10px;
+    padding: 10px 10px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+}
+
+    .sideMetric .metricLabel {
+        font-size: 0.82rem;
+        color: var(--muted);
+    }
+
+    .sideMetric .metricValue {
+        font-size: 1.3rem;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+    }
+
+/* Top 5 table */
+.sideTableWrap {
+    margin-top: 10px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.02);
+}
+
+.sideTable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+    .sideTable thead th {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        padding: 10px 10px;
+        background: rgba(0,0,0,0.2);
+    }
+
+    .sideTable tbody td {
+        padding: 10px 10px;
+        border-top: 1px solid rgba(255,255,255,0.06);
+        vertical-align: middle;
+    }
+
+    .sideTable .right {
+        text-align: right;
+    }
+
+.sidePartCell {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 8px;
+    align-items: baseline;
+}
+
+.sidePartSku {
+    font-variant-numeric: tabular-nums;
+}
+
+.sidePartName {
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
+.sideQty {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Status pills */
+.statusPill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(255,255,255,0.04);
+}
+
+    .statusPill.ok {
+        color: rgba(190,255,210,0.95);
+    }
+
+    .statusPill.warn {
+        color: rgba(255,230,160,0.95);
+    }
+
+    .statusPill.danger {
+        color: rgba(255,170,170,0.95);
+    }
+
+/* subtle hover */
+.sideTable tbody tr:hover td {
+    background: rgba(255,255,255,0.03);
+}
+
+/* Recent actions list */
+.sideList {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 0;
+    display: grid;
+    gap: 8px;
+}
+
+    .sideList li {
+        padding: 10px 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.06);
+        background: rgba(255,255,255,0.02);
+    }
+
+.sideActionRow {
+    display: grid;
+    gap: 6px;
+}
+
+.sideActionTop {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.sideActionMeta {
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.sideDate {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+/* shrink pills slightly in sidebar */
+.globalSide .historyPill {
+    font-size: 0.72rem;
+    padding: 3px 8px;
+}
+
+
+
+
+

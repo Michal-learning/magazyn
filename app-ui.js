@@ -12,17 +12,57 @@ const els = {
     suppliersList: document.querySelector("#suppliersListTable tbody"),
     machinesCatalog: document.querySelector("#machinesCatalogTable tbody"),
     machineSelect: document.getElementById('machineSelect'),
+
+    // Side panel
+    sideWarehouseTotal: document.getElementById('sideWarehouseTotal'),
     sideMissingList: document.getElementById('sideMissingList'),
     sideRecentActions: document.getElementById('sideRecentActions'),
 };
+
+// =========================
+// UI-only state for batches grouping expand/collapse
+// =========================
+const expandedBatchGroups = new Set();
+
+/**
+ * Group key for display-only aggregation of lots.
+ * IMPORTANT: This does NOT change FIFO or data. It is only for rendering.
+ */
+const batchGroupKey = (lot) => {
+    const sku = skuKey(lot.sku);
+    const supplier = normalize(lot.supplier || "-").toLowerCase();
+    // normalize price to a stable string to avoid 10 vs 10.0 differences
+    const price = String(safeFloat(lot.unitPrice || 0));
+    return `${sku}||${supplier}||${price}`;
+};
+
+// Bind once: toggle group expand/collapse in batches table (delegation)
+(function bindBatchGroupToggleOnce() {
+    if (window.__batchGroupToggleBound) return;
+    window.__batchGroupToggleBound = true;
+
+    document.addEventListener("click", (e) => {
+        const btn = e.target && e.target.closest ? e.target.closest('[data-action="toggleBatchGroup"]') : null;
+        if (!btn) return;
+
+        const key = btn.getAttribute("data-gkey");
+        if (!key) return;
+
+        if (expandedBatchGroups.has(key)) expandedBatchGroups.delete(key);
+        else expandedBatchGroups.add(key);
+
+        // Rerender only warehouse (cheap)
+        renderWarehouse();
+    });
+})();
 
 function computePartsSummary() {
     const summary = new Map();
     (state.lots || []).forEach(lot => {
         const key = skuKey(lot.sku);
         const prev = summary.get(key) || { sku: lot.sku, name: lot.name, qty: 0, value: 0 };
-        prev.qty += safeInt(lot.qty);
-        prev.value += safeInt(lot.qty) * safeFloat(lot.unitPrice || 0);
+        prev.qty += safeQtyInt(lot.qty);
+        prev.value += safeQtyInt(lot.qty) * safeFloat(lot.unitPrice || 0);
         // keep latest friendly name if any
         prev.name = lot.name || prev.name;
         summary.set(key, prev);
@@ -31,100 +71,115 @@ function computePartsSummary() {
 }
 
 function renderSideMissingTop5() {
-    if (!els.sideMissingList) return;
+  if (!els.sideMissingList) return;
 
-    const rows = computePartsSummary()
-        .filter(r => Number.isFinite(r.qty))
-        // "braki" = najniższe stany, ale sensownie: tylko te poniżej progu ostrzeżenia
-        .filter(r => r.qty <= LOW_WARN)
-        .sort((a, b) => (a.qty - b.qty) || String(a.sku).localeCompare(String(b.sku), 'pl'))
-        .slice(0, 5);
+  const rows = computePartsSummary()
+    .filter(r => Number.isFinite(r.qty))
+    .sort((a, b) => (a.qty - b.qty) || String(a.sku).localeCompare(String(b.sku), "pl"))
+    .slice(0, 5);
 
-    if (!rows.length) {
-        els.sideMissingList.innerHTML = '<li class="muted small" style="border:none; background:transparent; padding:0">Brak braków (wg progu ostrzeżenia).</li>';
-        return;
-    }
+  if (!rows.length) {
+    els.sideMissingList.innerHTML = `
+      <tr><td colspan="3" class="muted small">Brak danych.</td></tr>
+    `;
+    return;
+  }
 
-    els.sideMissingList.innerHTML = rows.map(r => {
-        return `
-            <li>
-                <div class="sideItemMain">
-                    <div class="sideItemTop">
-                        <span class="badge">${r.sku}</span>
-                        <span>${r.name || "—"}</span>
-                    </div>
-                    <div class="sideItemMeta">Stan ≤ ${LOW_WARN} (ostrzeżenie)</div>
-                </div>
-                <div class="sideQty">${r.qty}</div>
-            </li>
-        `;
-    }).join('');
+  els.sideMissingList.innerHTML = rows.map(r => {
+    const cls =
+      r.qty <= LOW_DANGER ? "danger" :
+      r.qty <= LOW_WARN ? "warn" :
+      "ok";
+
+    const status =
+      r.qty <= LOW_DANGER ? "Krytyczny" :
+      r.qty <= LOW_WARN ? "Niski" :
+      "OK";
+
+    return `
+      <tr>
+        <td>
+          <div class="sidePartCell">
+            <span class="badge sidePartSku">${r.sku}</span>
+            <span class="sidePartName">${r.name || "—"}</span>
+          </div>
+        </td>
+        <td><span class="statusPill ${cls}">${status}</span></td>
+        <td class="right sideQty">${r.qty}</td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function renderSideRecentActions5() {
-    if (!els.sideRecentActions) return;
+  if (!els.sideRecentActions) return;
 
-    const rows = (state.history || [])
-        .slice()
-        .sort((a, b) => (b.ts || 0) - (a.ts || 0))
-        .slice(0, 5);
+  const rows = (state.history || [])
+    .slice()
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+    .slice(0, 5);
 
-    if (!rows.length) {
-        els.sideRecentActions.innerHTML = '<li class="muted small" style="border:none; background:transparent; padding:0">Brak akcji.</li>';
-        return;
-    }
+  if (!rows.length) {
+    els.sideRecentActions.innerHTML = `<li class="muted small">Brak akcji.</li>`;
+    return;
+  }
 
-    els.sideRecentActions.innerHTML = rows.map(ev => {
-        const typeLabel = ev.type === "delivery" ? "Dostawa" : "Produkcja";
-        const meta = ev.type === "delivery"
-            ? `${(ev.items || []).length} poz. • ${ev.supplier ? ev.supplier : "—"}`
-            : `${(ev.items || []).length} poz.`;
+  els.sideRecentActions.innerHTML = rows.map(ev => {
+    const typeLabel = ev.type === "delivery" ? "Dostawa" : "Produkcja";
+    const pillClass = ev.type === "delivery" ? "delivery" : "build";
 
-        return `
-            <li>
-                <div class="sideItemMain">
-                    <div class="sideItemTop">
-                        <span class="historyPill ${ev.type === "delivery" ? "delivery" : "build"}">${typeLabel}</span>
-                        <span>${fmtDateISO(ev.dateISO)}</span>
-                    </div>
-                    <div class="sideItemMeta">${meta}</div>
-                </div>
-            </li>
-        `;
-    }).join('');
+    const meta = ev.type === "delivery"
+      ? `${(ev.items || []).length} poz. • ${ev.supplier || "—"}`
+      : `${(ev.items || []).length} poz.`;
+
+    return `
+      <li>
+        <div class="sideActionRow">
+          <div class="sideActionTop">
+            <span class="historyPill ${pillClass}">${typeLabel}</span>
+            <span class="sideDate">${fmtDateISO(ev.dateISO)}</span>
+          </div>
+          <div class="sideActionMeta">${meta}</div>
+        </div>
+      </li>
+    `;
+  }).join("");
 }
 
 function renderSidePanel() {
-    // update both lists in one go (cheap, small state)
     renderSideMissingTop5();
     renderSideRecentActions5();
 }
 
 function renderWarehouse() {
-    if (!els.partsTable || !els.summaryTable || !els.whTotal) return;
+    // ✅ Nie blokuj renderu, jeśli wywalisz warehouseTotal z zakładki
+    if (!els.partsTable || !els.summaryTable) return;
+
     const q = normalize(document.getElementById("searchParts")?.value).toLowerCase();
     const summary = new Map();
     const qtyByKey = new Map();
     let grandTotal = 0;
 
-    // POPRAWKA: Wyszukiwanie obejmuje dostawcę
-    const filteredLots = state.lots.filter(l =>
+    // Wyszukiwanie obejmuje dostawcę
+    const filteredLots = (state.lots || []).filter(l =>
         !q ||
-        l.sku.toLowerCase().includes(q) ||
-        l.name.toLowerCase().includes(q) ||
-        (l.supplier || "").toLowerCase().includes(q)
+        String(l.sku || "").toLowerCase().includes(q) ||
+        String(l.name || "").toLowerCase().includes(q) ||
+        String(l.supplier || "").toLowerCase().includes(q)
     );
 
     // sort: ilość rosnąco (display-only)
     const filteredLotsSorted = filteredLots
         .slice()
-        .sort((a, b) => (safeInt(a.qty) - safeInt(b.qty)) || ((a.id || 0) - (b.id || 0)));
+        .sort((a, b) => (safeQtyInt(a.qty) - safeQtyInt(b.qty)) || ((a.id || 0) - (b.id || 0)));
 
+    // build summary from filtered lots (for podsumowanie + thresholds)
     filteredLotsSorted.forEach(lot => {
         const key = skuKey(lot.sku);
+        if (!key) return;
         summary.set(key, summary.get(key) || { sku: lot.sku, name: lot.name, qty: 0, value: 0 });
-        summary.get(key).qty += lot.qty;
-        summary.get(key).value += lot.qty * (lot.unitPrice || 0);
+        summary.get(key).qty += safeQtyInt(lot.qty);
+        summary.get(key).value += safeQtyInt(lot.qty) * (safeFloat(lot.unitPrice || 0));
     });
 
     // Mapka ilości do progów (żeby w widoku partii też działało ostrzeganie)
@@ -132,40 +187,148 @@ function renderWarehouse() {
         qtyByKey.set(key, item.qty);
     });
 
-    els.partsTable.innerHTML = filteredLotsSorted.map(lot => {
-        const key = skuKey(lot.sku);
-        const totalQty = qtyByKey.get(key) ?? lot.qty;
-        const rowClass = totalQty <= LOW_DANGER ? "stock-danger" : totalQty <= LOW_WARN ? "stock-warn" : "";
-        return `
-        <tr class="${rowClass}">
-            <td><span class="badge">${lot.sku}</span> ${lot.name}</td>
-            <td>${lot.supplier || "-"}</td>
-            <td class="right">${fmtPLN.format(lot.unitPrice || 0)}</td>
-            <td class="right">${lot.qty}</td>
-            <td class="right">${fmtPLN.format(lot.qty * (lot.unitPrice || 0))}</td>
-        </tr>
-    `;
-    }).join("");
+    // Determine which view is active from the split wrapper
+    const split = document.getElementById("partsSplit");
+    const view = split?.getAttribute("data-view") || "batches"; // "compact" vs "batches"
 
-    summary.forEach(item => {
-        grandTotal += item.value;
-    });
+    // ============================
+    // BATCHES VIEW (Partie / Szczegóły)
+    // Display-only grouping + expandable detail rows (true FIFO lots)
+    // ============================
+    if (view === "batches") {
+        const groups = new Map();
 
+        // group lots by (sku + supplier + unitPrice)
+        filteredLotsSorted.forEach(lot => {
+            if (!lot) return;
+            const gk = batchGroupKey(lot);
+            if (!groups.has(gk)) groups.set(gk, { key: gk, lots: [], sumQty: 0, firstId: lot.id || 0, lot0: lot });
+            const g = groups.get(gk);
+            g.lots.push(lot);
+            g.sumQty += safeQtyInt(lot.qty);
+            g.firstId = Math.min(g.firstId, lot.id || g.firstId);
+        });
+
+        const groupList = Array.from(groups.values()).sort((a, b) => {
+            const aSkuTotal = qtyByKey.get(skuKey(a.lot0.sku)) ?? 0;
+            const bSkuTotal = qtyByKey.get(skuKey(b.lot0.sku)) ?? 0;
+            if (aSkuTotal !== bSkuTotal) return aSkuTotal - bSkuTotal;
+            return (a.firstId || 0) - (b.firstId || 0);
+        });
+
+        const rowsHtml = [];
+
+        groupList.forEach(g => {
+            const lot0 = g.lot0;
+            const skuK = skuKey(lot0.sku);
+            const totalQtyForSku = qtyByKey.get(skuK) ?? safeQtyInt(lot0.qty);
+
+            // thresholds based on TOTAL SKU qty (same as summary view)
+            const rowClass = totalQtyForSku <= LOW_DANGER ? "stock-danger" : totalQtyForSku <= LOW_WARN ? "stock-warn" : "";
+            const isOpen = expandedBatchGroups.has(g.key);
+
+            const unitPrice = safeFloat(lot0.unitPrice || 0);
+            const groupValue = g.sumQty * unitPrice;
+
+            // Group row
+            rowsHtml.push(`
+                <tr class="batchGroupRow ${rowClass}">
+                    <td>
+                        <div class="batchMain">
+                            <div class="batchTop" style="display:flex; gap:8px; align-items:baseline;">
+                                <span class="badge">${lot0.sku}</span>
+                                <span class="batchName">${lot0.name || ""}</span>
+                            </div>
+                            <div class="batchMeta muted small" style="margin-top:2px">
+                                ${lot0.supplier || "-"} • ${fmtPLN.format(unitPrice)} • Partie: <strong>${g.lots.length}</strong>
+                            </div>
+                        </div>
+                    </td>
+                    <td>${lot0.supplier || "-"}</td>
+                    <td class="right">${fmtPLN.format(unitPrice)}</td>
+                    <td class="right"><strong>${g.sumQty}</strong></td>
+                    <td class="right">${fmtPLN.format(groupValue)}</td>
+                    <td class="right">
+                        <button class="secondary compact" type="button"
+                            data-action="toggleBatchGroup"
+                            data-gkey="${g.key}"
+                            aria-expanded="${isOpen ? "true" : "false"}">
+                            ${isOpen ? "Zwiń" : "Rozwiń"}
+                        </button>
+                    </td>
+                </tr>
+            `);
+
+            // Detail rows: true FIFO lots by id, only when expanded
+            if (isOpen) {
+                const sortedLots = g.lots.slice().sort((a, b) => (a.id || 0) - (b.id || 0));
+                sortedLots.forEach(lot => {
+                    const val = safeQtyInt(lot.qty) * safeFloat(lot.unitPrice || 0);
+                    rowsHtml.push(`
+                        <tr class="batchDetailRow ${rowClass}">
+                            <td>
+                                <div class="batchDetailIndent" style="padding-left:18px">
+                                    <span class="muted small">Partia #${lot.id ?? "—"} • ${fmtDateISO(lot.dateIn)}</span><br>
+                                    <span class="badge">${lot.sku}</span> ${lot.name || ""}
+                                </div>
+                            </td>
+                            <td>${lot.supplier || "-"}</td>
+                            <td class="right">${fmtPLN.format(safeFloat(lot.unitPrice || 0))}</td>
+                            <td class="right">${safeQtyInt(lot.qty)}</td>
+                            <td class="right">${fmtPLN.format(val)}</td>
+                            <td class="right"></td>
+                        </tr>
+                    `);
+                });
+            }
+        });
+
+        els.partsTable.innerHTML = rowsHtml.join("");
+    } else {
+        // ============================
+        // COMPACT VIEW fallback
+        // ============================
+        els.partsTable.innerHTML = filteredLotsSorted.map(lot => {
+            const key = skuKey(lot.sku);
+            const totalQty = qtyByKey.get(key) ?? safeQtyInt(lot.qty);
+            const rowClass = totalQty <= LOW_DANGER ? "stock-danger" : totalQty <= LOW_WARN ? "stock-warn" : "";
+            return `
+                <tr class="${rowClass}">
+                    <td><span class="badge">${lot.sku}</span> ${lot.name}</td>
+                    <td>${lot.supplier || "-"}</td>
+                    <td class="right">${fmtPLN.format(lot.unitPrice || 0)}</td>
+                    <td class="right">${safeQtyInt(lot.qty)}</td>
+                    <td class="right">${fmtPLN.format(safeQtyInt(lot.qty) * safeFloat(lot.unitPrice || 0))}</td>
+                    <td class="right"></td>
+                </tr>
+            `;
+        }).join("");
+    }
+
+    // Total value from summary
+    summary.forEach(item => { grandTotal += item.value; });
+    const totalFormatted = fmtPLN.format(grandTotal);
+
+    // ✅ Sidebar total
+    if (els.sideWarehouseTotal) els.sideWarehouseTotal.textContent = totalFormatted;
+
+    // (opcjonalnie) jeśli zostawisz to jeszcze w HTML zakładki
+    if (els.whTotal) els.whTotal.textContent = totalFormatted;
+
+    // Summary table (SKU aggregated) sorted by qty ascending
     els.summaryTable.innerHTML = Array.from(summary.values())
         .slice()
-        .sort((a, b) => (safeInt(a.qty) - safeInt(b.qty)) || String(a.sku).localeCompare(String(b.sku), 'pl'))
+        .sort((a, b) => (safeQtyInt(a.qty) - safeQtyInt(b.qty)) || String(a.sku).localeCompare(String(b.sku), 'pl'))
         .map(item => `
-        <tr class="${ item.qty <= LOW_DANGER ? "stock-danger" : item.qty <= LOW_WARN ? "stock-warn" : "" }">
-            <td><span class="badge">${item.sku}</span></td>
-            <td>${item.name}</td>
-            <td class="right">${item.qty}</td>
-            <td class="right">${fmtPLN.format(item.value)}</td>
-        </tr>
-    `).join("");
+            <tr class="${ item.qty <= LOW_DANGER ? "stock-danger" : item.qty <= LOW_WARN ? "stock-warn" : "" }">
+                <td><span class="badge">${item.sku}</span></td>
+                <td>${item.name}</td>
+                <td class="right">${item.qty}</td>
+                <td class="right">${fmtPLN.format(item.value)}</td>
+            </tr>
+        `).join("");
 
-    els.whTotal.textContent = fmtPLN.format(grandTotal);
-
-    // panel: braki + ostatnie akcje
+    // side panel: braki + ostatnie akcje
     renderSidePanel();
 }
 
@@ -173,6 +336,7 @@ function renderDelivery() {
     if (!els.deliveryItems) return;
     const items = state.currentDelivery.items;
     let total = 0;
+
     els.deliveryItems.innerHTML = items.map(i => {
         const rowVal = i.qty * i.price;
         total += rowVal;
@@ -184,7 +348,7 @@ function renderDelivery() {
             <td class="right"><button class="iconBtn" onclick="removeDeliveryItem(${i.id})">✕</button></td>
         </tr>`;
     }).join("");
-    
+
     const itemsCountEl = document.getElementById("itemsCount");
     const itemsTotalEl = document.getElementById("itemsTotal");
     const finalizeBtn = document.getElementById("finalizeDeliveryBtn");
@@ -195,6 +359,7 @@ function renderDelivery() {
 
 function renderBuild() {
     if (!els.buildItems) return;
+
     els.buildItems.innerHTML = state.currentBuild.items.map(i => {
         const m = state.machineCatalog.find(x => x.code === i.machineCode);
         return `<tr>
@@ -203,13 +368,22 @@ function renderBuild() {
             <td class="right"><button class="iconBtn" onclick="removeBuildItem(${i.id})">✕</button></td>
         </tr>`;
     }).join("");
-    
+
     const buildCountEl = document.getElementById("buildItemsCount");
     const finalizeBuildBtn = document.getElementById("finalizeBuildBtn");
     if (buildCountEl) buildCountEl.textContent = String(state.currentBuild.items.length);
     if (finalizeBuildBtn) finalizeBuildBtn.disabled = state.currentBuild.items.length === 0;
-    els.missingBox.hidden = true;
-    els.manualBox.hidden = true;
+
+    // Zawsze czyścimy widoki błędów/manual na starcie renderu
+    if (els.missingBox) els.missingBox.hidden = true;
+    if (els.manualBox) els.manualBox.hidden = true;
+
+    // ✅ KLUCZ: jeśli tryb manual i są jakieś pozycje w planie, pokaż UI manual
+    const mode = document.getElementById("consumeMode")?.value || "fifo";
+    if (mode === "manual" && state.currentBuild.items.length > 0) {
+        renderManualConsume(); // ta funkcja sama pokaże missingBox jeśli brakuje części
+    }
+
 }
 
 function renderMissingParts(missing) {
@@ -227,39 +401,62 @@ function renderManualConsume() {
     const container = document.getElementById("manualConsumeUI");
     if (!container) return;
     container.innerHTML = "";
-    
+
     const missing = checkStockAvailability(req);
     if (missing.length > 0) {
         renderMissingParts(missing);
-        els.manualBox.hidden = true;
+        if (els.manualBox) els.manualBox.hidden = true;
         return;
     }
 
-    els.manualBox.hidden = false;
-    
+    if (els.manualBox) els.manualBox.hidden = false;
+
     req.forEach((qtyNeeded, skuKeyStr) => {
         const part = state.partsCatalog.get(skuKeyStr);
-        const lots = state.lots.filter(l => skuKey(l.sku) === skuKeyStr);
-        
+
+        // FIFO kolejność w manualu (czytelniej i logicznie)
+        const lots = (state.lots || [])
+            .filter(l => skuKey(l.sku) === skuKeyStr)
+            .slice()
+            .sort((a, b) => (a.id || 0) - (b.id || 0));
+
         const html = `
         <div class="consumePart">
             <div style="margin-bottom:6px">
-                <strong>${part?.sku || skuKeyStr}</strong> 
+                <strong>${part?.sku || skuKeyStr}</strong>
                 <span class="muted">(Wymagane: ${qtyNeeded})</span>
             </div>
-            ${lots.map(lot => `
+
+            ${lots.length ? lots.map(lot => {
+                const dateStr = (lot && lot.dateIn) ? fmtDateISO(lot.dateIn) : "—";
+                const supplier = lot?.supplier || "—";
+                const price = fmtPLN.format(safeFloat(lot?.unitPrice || 0));
+                const qtyAvail = safeQtyInt(lot?.qty || 0);
+                const lotId = lot?.id ?? "—";
+
+                return `
                 <div class="lotRow">
-                    <span>${lot.supplier} (${fmtPLN.format(lot.unitPrice)}) - Dostępne: ${lot.qty}</span>
+                    <span>
+                        <strong>#${lotId}</strong>
+                        • ${supplier} (${price})
+                        • <span class="muted">Data:</span> <strong>${dateStr}</strong>
+                        • <span class="muted">Dostępne:</span> <strong>${qtyAvail}</strong>
+                    </span>
                     <input type="number" class="manual-lot-input"
-                        data-lot-id="${lot.id}" 
+                        data-lot-id="${lot?.id}"
                         data-sku="${skuKeyStr}"
-                        max="${lot.qty}" min="0" value="0">
+                        max="${qtyAvail}" min="0" value="0">
                 </div>
-            `).join("")}
+                `;
+            }).join("") : `
+                <div class="muted small">Brak partii dla tej części.</div>
+            `}
         </div>`;
-        container.insertAdjacentHTML('beforeend', html);
+
+        container.insertAdjacentHTML("beforeend", html);
     });
 }
+
 
 function renderMachinesStock() {
     const q = normalize(document.getElementById("searchMachines")?.value).toLowerCase();
@@ -274,7 +471,6 @@ function renderMachinesStock() {
             <td class="right"><strong>${m.qty}</strong></td>
         </tr>`).join("");
 }
-
 
 function renderHistory() {
     const tbody = document.querySelector("#historyTable tbody");
@@ -423,7 +619,7 @@ function renderAllSuppliers() {
             </td>
         </tr>
     `).join("");
-    
+
     renderSelectOptions(document.getElementById("supplierSelect"), Array.from(state.suppliers.keys()));
 }
 
@@ -438,7 +634,7 @@ function refreshCatalogsUI() {
         const suppliers = Array.from(state.suppliers.entries())
             .filter(([_, data]) => data.prices.has(skuKey(p.sku)))
             .map(([n]) => n);
-            
+
         return `<tr>
             <td><span class="badge">${p.sku}</span></td>
             <td>${p.name}</td>
@@ -473,7 +669,7 @@ function refreshCatalogsUI() {
     const supCheckList = byId("partNewSuppliersChecklist");
     const allSups = Array.from(state.suppliers.keys()).sort();
     if (!supCheckList) return;
-    
+
     if (allSups.length === 0) {
         supCheckList.innerHTML = '<span class="small muted">Brak zdefiniowanych dostawców. Dodaj ich w zakładce "Dostawcy".</span>';
     } else {
@@ -490,7 +686,7 @@ function refreshCatalogsUI() {
 function renderSelectOptions(select, values, displayMapFn = x => x) {
     if (!select) return;
     const current = select.value;
-    select.innerHTML = '<option value="">-- Wybierz --</option>' + 
+    select.innerHTML = '<option value="">-- Wybierz --</option>' +
         values.map(v => `<option value="${v}">${displayMapFn(v)}</option>`).join("");
     if (values.includes(current)) select.value = current;
 }
