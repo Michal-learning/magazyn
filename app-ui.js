@@ -527,26 +527,139 @@ function renderMachinesStock() {
         </tr>`).join("");
 }
 
+function getHistoryView() {
+    // initHistoryViewToggle stores it
+    const v = localStorage.getItem("magazyn_history_view");
+    return (v === "builds") ? "builds" : "deliveries";
+}
+
+function parsePLDateToISO(dmy) {
+    const m = String(dmy || "").trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (!m) return null;
+    const dd = m[1], mm = m[2], yyyy = m[3];
+    // basic sanity (no heavy calendar validation)
+    const d = parseInt(dd, 10), mo = parseInt(mm, 10), y = parseInt(yyyy, 10);
+    if (!(y >= 1970 && y <= 2100)) return null;
+    if (!(mo >= 1 && mo <= 12)) return null;
+    if (!(d >= 1 && d <= 31)) return null;
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+function parseHistoryDateRange(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return { fromISO: null, toISO: null };
+
+    // allow "DD.MM.RRRR" OR "DD.MM.RRRR-DD.MM.RRRR" (spaces optional)
+    const parts = s.split("-").map(x => x.trim());
+    if (parts.length === 1) {
+        return { fromISO: parsePLDateToISO(parts[0]), toISO: null };
+    }
+    if (parts.length >= 2) {
+        const fromISO = parts[0] ? parsePLDateToISO(parts[0]) : null;
+        const toISO = parts[1] ? parsePLDateToISO(parts[1]) : null;
+        return { fromISO, toISO };
+    }
+    return { fromISO: null, toISO: null };
+}
+
+function historyMatchesFilters(ev, view, qNorm, fromISO, toISO) {
+    if (!ev) return false;
+    if (view === "deliveries" && ev.type !== "delivery") return false;
+    if (view === "builds" && ev.type !== "build") return false;
+
+    const d = ev.dateISO || "";
+    if (fromISO && d && d < fromISO) return false;
+    if (toISO && d && d > toISO) return false;
+
+    if (!qNorm) return true;
+
+    if (view === "deliveries") {
+        const supplier = normalize(ev.supplier || "").toLowerCase();
+        if (supplier.includes(qNorm)) return true;
+
+        const items = Array.isArray(ev.items) ? ev.items : [];
+        for (const it of items) {
+            const sku = normalize(it?.sku || "").toLowerCase();
+            const name = normalize(it?.name || "").toLowerCase();
+            if ((sku && sku.includes(qNorm)) || (name && name.includes(qNorm))) return true;
+        }
+        return false;
+    }
+
+    // builds
+    const items = Array.isArray(ev.items) ? ev.items : [];
+    for (const it of items) {
+        const code = normalize(it?.code || "").toLowerCase();
+        const name = normalize(it?.name || "").toLowerCase();
+        if ((code && code.includes(qNorm)) || (name && name.includes(qNorm))) return true;
+    }
+    return false;
+}
+
 function renderHistory() {
     const tbody = document.querySelector("#historyTable tbody");
     if (!tbody) return;
 
+    const view = getHistoryView();
+    const qNorm = normalize(document.getElementById("historySearch")?.value || "").toLowerCase();
+    const { fromISO, toISO } = parseHistoryDateRange(document.getElementById("historyDateRange")?.value || "");
+
     const rows = (state.history || [])
         .slice()
-        .sort((a,b) => (b.ts || 0) - (a.ts || 0));
+        .sort((a,b) => (b.ts || 0) - (a.ts || 0))
+        .filter(ev => historyMatchesFilters(ev, view, qNorm, fromISO, toISO));
 
     if (!rows.length) {
-        tbody.innerHTML = `<tr><td colspan="3" class="muted small">Brak zapisanych akcji. Zatwierdź dostawę albo finalizuj produkcję, a pojawią się tutaj.</td></tr>`;
+        const msg = (view === "deliveries")
+            ? "Brak dostaw w historii dla wybranych filtrów."
+            : "Brak produkcji w historii dla wybranych filtrów.";
+        tbody.innerHTML = `<tr><td colspan="3" class="muted small">${msg}</td></tr>`;
         return;
     }
 
     tbody.innerHTML = rows.map(ev => {
-        const typeLabel = ev.type === "delivery" ? "Dostawa" : "Produkcja";
-        const pillClass = ev.type === "delivery" ? "delivery" : "build";
+        const date = fmtDateISO(ev.dateISO);
+        let summary = "";
+
+        if (ev.type === "delivery") {
+            const n = (ev.items||[]).length;
+            const total = (ev.items||[]).reduce((s,i)=>s + (safeFloat(i.price) * safeInt(i.qty)), 0);
+            summary = `
+                <span class="badge">${escapeHtml(ev.supplier || "—")}</span>
+                <span class="muted small">• Pozycji: <strong>${n}</strong></span>
+                <span class="muted small">• Suma: <strong class="historyMoney">${fmtPLN.format(total)}</strong></span>
+            `;
+        } else {
+            const n = (ev.items||[]).length;
+            const totalQty = (ev.items||[]).reduce((s,i)=>s + safeInt(i.qty), 0);
+            const totalConsumptionValue = (ev.items||[]).reduce((sum, it) => {
+                const machineVal = (it?.partsUsed || []).reduce((ms, p) => {
+                    const lots = Array.isArray(p?.lots) ? p.lots : [];
+                    return ms + lots.reduce((ls, lot) => ls + (safeInt(lot?.qty) * safeFloat(lot?.unitPrice || 0)), 0);
+                }, 0);
+                return sum + machineVal;
+            }, 0);
+
+            const machinesPreview = (ev.items||[])
+                .slice(0, 2)
+                .map(i => `${i?.name || "—"} (${i?.code || "—"})`)
+                .join(", ");
+            const more = (ev.items||[]).length > 2 ? ` +${(ev.items||[]).length - 2}` : "";
+
+            summary = `
+                <span class="badge">${escapeHtml(machinesPreview || "Produkcja")}${escapeHtml(more)}</span>
+                <span class="muted small">• Pozycji: <strong>${n}</strong></span>
+                <span class="muted small">• Sztuk: <strong>${totalQty}</strong></span>
+                ${Number.isFinite(totalConsumptionValue) && totalConsumptionValue > 0
+                    ? `<span class="muted small">• Zużycie: <strong class="historyMoney">${fmtPLN.format(totalConsumptionValue)}</strong></span>`
+                    : ``}
+            `;
+        }
+
         return `
         <tr data-hid="${ev.id}">
-            <td><span class="historyPill ${pillClass}">${typeLabel}</span></td>
-            <td>${fmtDateISO(ev.dateISO)}</td>
+            <td style="white-space:nowrap">${date}</td>
+            <td>${summary}</td>
             <td class="right">
                 <button class="secondary compact historyPreviewBtn" type="button" data-action="toggleHistory" data-hid="${ev.id}">Podgląd</button>
             </td>
@@ -558,7 +671,7 @@ function renderHistory() {
         </tr>`;
     }).join("");
 
-    // panel: ostatnie akcje
+    // panel: ostatnie akcje (globalnie)
     renderSideRecentActions5();
 }
 
@@ -628,7 +741,7 @@ function buildHistoryDetails(ev) {
     if (Number.isFinite(totalConsumptionValue) && totalConsumptionValue > 0) {
         const perUnit = totalQty > 0 ? (totalConsumptionValue / totalQty) : 0;
         metaBits.push(`<span class="muted small">Wartość zużycia: <strong class="historyMoney">${fmtPLN.format(totalConsumptionValue)}</strong></span>`);
-          }
+    }
 
     return `
         <div class="historyGrid">
@@ -695,6 +808,8 @@ function buildHistoryDetails(ev) {
                                 const empty = !partsRows
                                     ? `<div class="muted small">Brak danych o zużyciu dla tej maszyny (stara akcja lub brak BOM).</div>`
                                     : `
+                                        <div class="buildPartsSummary">
+                                            <div class="small muted">Suma zużycia: <strong class="historyMoney">${fmtPLN.format(machineConsumptionValue)}</strong></div>
                                         </div>
 
                                         <div class="tableWrap buildPartsWrap">
@@ -814,21 +929,420 @@ function refreshCatalogsUI() {
         return `${m.name} (${c})`;
     });
 
-    // 4. GENERATE SUPPLIER CHECKBOXES FOR NEW PART
-    const supCheckList = byId("partNewSuppliersChecklist");
+    // 4. SUPPLIER PICKER FOR NEW PART (multi-combobox, instead of inline checkboxes)
+    const supBox = byId("partNewSuppliersChecklist");
     const allSups = Array.from(state.suppliers.keys()).sort();
-    if (!supCheckList) return;
+    if (!supBox) return;
+    comboMultiRender(supBox, {
+        options: allSups,
+        selected: comboMultiGetSelected(supBox),
+        placeholder: allSups.length ? "Wybierz dostawców..." : "Brak zdefiniowanych dostawców."
+    });
+}
 
-    if (allSups.length === 0) {
-        supCheckList.innerHTML = '<span class="small muted">Brak zdefiniowanych dostawców. Dodaj ich w zakładce "Dostawcy".</span>';
-    } else {
-        supCheckList.innerHTML = allSups.map(s => `
-            <label style="display:inline-flex; align-items:center; background:rgba(255,255,255,0.05); padding:4px 8px; border-radius:12px; font-size:0.85rem; cursor:pointer;">
-                <input type="checkbox" name="newPartSupplier" value="${s}" style="width:auto; margin:0 6px 0 0;">
-                ${s}
-            </label>
-        `).join("");
+// === Multi-combobox (no deps) ===
+function comboMultiGetSelected(hostEl) {
+    try {
+        const raw = hostEl?.dataset?.selected || "";
+        if (!raw) return [];
+        return raw.split("|").map(s => s.trim()).filter(Boolean);
+    } catch { return []; }
+}
+
+function comboMultiSetSelected(hostEl, arr) {
+    if (!hostEl) return;
+    const next = (arr || []).map(s => String(s)).filter(Boolean);
+    hostEl.dataset.selected = next.join("|");
+}
+
+function comboMultiClear(hostEl) {
+    comboMultiSetSelected(hostEl, []);
+    comboMultiRender(hostEl, {
+        options: comboMultiGetOptions(hostEl),
+        selected: [],
+        placeholder: hostEl.dataset.placeholder || "Wybierz..."
+    });
+    hostEl.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function comboMultiGetOptions(hostEl) {
+    try {
+        const raw = hostEl?.dataset?.options || "";
+        if (!raw) return [];
+        return raw.split("|").map(s => s.trim()).filter(Boolean);
+    } catch { return []; }
+}
+
+function comboMultiRender(hostEl, cfg) {
+    if (!hostEl) return;
+    const options = Array.isArray(cfg?.options) ? cfg.options : [];
+    const selected = new Set(Array.isArray(cfg?.selected) ? cfg.selected : comboMultiGetSelected(hostEl));
+    const placeholder = cfg?.placeholder || "Wybierz...";
+
+    // Persist for re-render + helpers
+    hostEl.dataset.options = options.join("|");
+    hostEl.dataset.placeholder = placeholder;
+    comboMultiSetSelected(hostEl, Array.from(selected));
+
+    if (options.length === 0) {
+        hostEl.innerHTML = `<span class="small muted">${escapeHtml(placeholder)}</span>`;
+        return;
     }
+
+    const chips = Array.from(selected).slice(0, 3).map(s =>
+        `<span class="comboChip" data-chip="${escapeHtml(s)}">${escapeHtml(s)} <span class="x" aria-hidden="true">×</span></span>`
+    ).join("");
+    const extra = (selected.size > 3) ? `<span class="comboChip">+${selected.size - 3}</span>` : "";
+
+    hostEl.innerHTML = `
+        <div class="comboCtl" tabindex="0" role="combobox" aria-expanded="false">
+            <div class="comboLeft">
+                ${selected.size ? (chips + extra) : `<span class="comboPlaceholder">${escapeHtml(placeholder)}</span>`}
+            </div>
+            <div class="comboCaret">▾</div>
+        </div>
+        <div class="comboMenu" hidden>
+            <div class="comboSearchWrap">
+                <input class="comboSearch" type="text" placeholder="Szukaj..." autocomplete="off" />
+            </div>
+            <div class="comboOptions">
+                ${options.map(opt => {
+                    const on = selected.has(opt);
+                    // data-norm: stable, precomputed search label (so filtering never depends on DOM text quirks)
+                    const norm = normalizeComboText(opt);
+                    return `<div class="comboOpt" data-opt="${escapeHtml(opt)}" data-norm="${escapeHtml(norm)}" data-selected="${on ? "1" : "0"}" role="option" aria-selected="${on}">
+                        <span class="comboOptLabel">${escapeHtml(opt)}</span>
+                        <span class="tick" aria-hidden="true">✓</span>
+                    </div>`;
+                }).join("")}
+                <div class="comboEmpty" hidden>Brak wyników</div>
+            </div>
+        </div>
+    `;
+
+    // Wire events (idempotent because we render fresh DOM)
+    const ctl = hostEl.querySelector(".comboCtl");
+    const menu = hostEl.querySelector(".comboMenu");
+    const search = hostEl.querySelector(".comboSearch");
+    const opts = hostEl.querySelector(".comboOptions");
+    const empty = hostEl.querySelector(".comboEmpty");
+
+    const open = () => {
+        if (!menu) return;
+        menu.hidden = false;
+        ctl?.setAttribute("aria-expanded", "true");
+
+        // Focus quirks: focusing an <input> during pointerdown can be flaky in some browsers.
+        // Do it on next tick and force a filter pass so the list always matches what's in the box.
+        setTimeout(() => {
+            try {
+                if (search) {
+                    search.focus();
+                    // don't select on purpose; user might be continuing typing
+                    search.dispatchEvent(new Event("input"));
+                }
+            } catch {}
+        }, 0);
+
+        closeOtherCombos(hostEl);
+    };
+    const close = () => {
+        if (!menu) return;
+        menu.hidden = true;
+        ctl?.setAttribute("aria-expanded", "false");
+        if (search) search.value = "";
+        // reset filter
+        opts?.querySelectorAll(".comboOpt").forEach(o => o.hidden = false);
+        if (empty) empty.hidden = true;
+    };
+    hostEl.__comboClose = close;
+
+    const stop = (e) => { try { e.stopPropagation(); } catch {} };
+    const stopHard = (e) => { try { e.preventDefault(); } catch {} stop(e); };
+
+    // Use pointerdown so we beat "click-away" handlers and avoid flaky toggles.
+    ctl?.addEventListener("pointerdown", (e) => {
+        stopHard(e);
+        if (menu?.hidden) open(); else close();
+    });
+    // Same label-focus fix as single-select: prevent label default from stealing focus.
+    ctl?.addEventListener("click", stopHard);
+    ctl?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (menu?.hidden) ? open() : close(); }
+        if (e.key === "Escape") { e.preventDefault(); close(); }
+    });
+
+    opts?.addEventListener("pointerdown", (e) => {
+        stopHard(e);
+        const el = e.target?.closest?.(".comboOpt");
+        if (!el) return;
+        const val = el.getAttribute("data-opt") || "";
+        if (!val) return;
+        if (selected.has(val)) selected.delete(val); else selected.add(val);
+        comboMultiSetSelected(hostEl, Array.from(selected));
+        hostEl.dispatchEvent(new Event("change", { bubbles: true }));
+        // Re-render to refresh chips + states. Keep open, but do it next tick to avoid document handlers.
+        comboMultiRender(hostEl, { options, selected: Array.from(selected), placeholder });
+        setTimeout(() => {
+            try {
+                const m = hostEl.querySelector(".comboMenu");
+                if (m) m.hidden = false;
+                const s = hostEl.querySelector(".comboSearch");
+                if (s) s.focus();
+            } catch {}
+        }, 0);
+    });
+
+    hostEl.querySelectorAll(".comboChip").forEach(chip => {
+        chip.addEventListener("pointerdown", (e) => {
+            stopHard(e);
+            const v = chip.getAttribute("data-chip");
+            if (!v) return;
+            selected.delete(v);
+            comboMultiSetSelected(hostEl, Array.from(selected));
+            hostEl.dispatchEvent(new Event("change", { bubbles: true }));
+            comboMultiRender(hostEl, { options, selected: Array.from(selected), placeholder });
+        });
+    });
+
+    const applyMultiFilter = () => {
+        const q = normalizeComboQuery(search?.value);
+        let visible = 0;
+        opts?.querySelectorAll(".comboOpt").forEach(o => {
+            const t = normalizeComboText(o.dataset.norm || o.getAttribute("data-opt") || "");
+            const show = q ? t.includes(q) : true;
+            o.hidden = !show;
+            if (show) visible++;
+        });
+        if (empty) empty.hidden = visible !== 0;
+    };
+
+    // Filter as you type (and also after IME composition).
+    // Some edge cases (autofill, certain IME paths) can miss "input", so keep a lightweight fallback.
+    search?.addEventListener("input", applyMultiFilter);
+    search?.addEventListener("compositionend", applyMultiFilter);
+    search?.addEventListener("keyup", applyMultiFilter);
+
+    // click-away close
+    if (!window.__comboMultiGlobalBound) {
+        window.__comboMultiGlobalBound = true;
+        document.addEventListener("pointerdown", (e) => {
+            document.querySelectorAll(".comboMulti").forEach(node => {
+                if (node.contains(e.target)) return;
+                if (node.__comboClose) node.__comboClose();
+            });
+        }, true);
+    }
+}
+
+// ---------- Single-select combobox (wrapping existing <select>) ----------
+
+function normalizeComboText(s){
+    return String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function normalizeComboQuery(s){
+    return normalizeComboText(s);
+}
+
+function initComboFromSelect(selectEl, cfg){
+    if (!selectEl || selectEl.__comboBound) return;
+    const placeholder = cfg?.placeholder || "Wybierz...";
+
+    // Build wrapper right after select (keep select in DOM for existing listeners)
+    const wrap = document.createElement("div");
+    wrap.className = "comboWrap";
+
+    const ctl = document.createElement("div");
+    ctl.className = "comboCtl";
+    ctl.setAttribute("tabindex", "0");
+    ctl.setAttribute("role", "combobox");
+    ctl.setAttribute("aria-expanded", "false");
+
+    const valueEl = document.createElement("div");
+    valueEl.className = "comboValue";
+    const caret = document.createElement("div");
+    caret.className = "comboCaret";
+    caret.textContent = "▾";
+    ctl.appendChild(valueEl);
+    ctl.appendChild(caret);
+
+    const menu = document.createElement("div");
+    menu.className = "comboMenu";
+    menu.hidden = true;
+    const searchWrap = document.createElement("div");
+    searchWrap.className = "comboSearchWrap";
+    const search = document.createElement("input");
+    search.className = "comboSearch";
+    search.type = "text";
+    search.placeholder = "Szukaj...";
+    search.autocomplete = "off";
+    searchWrap.appendChild(search);
+    const options = document.createElement("div");
+    options.className = "comboOptions";
+    const empty = document.createElement("div");
+    empty.className = "comboEmpty";
+    empty.hidden = true;
+    empty.textContent = "Brak wyników";
+    options.appendChild(empty);
+    menu.appendChild(searchWrap);
+    menu.appendChild(options);
+
+    wrap.appendChild(ctl);
+    wrap.appendChild(menu);
+
+    // Insert after select
+    selectEl.insertAdjacentElement("afterend", wrap);
+    selectEl.classList.add("comboNativeHidden");
+    selectEl.__comboBound = true;
+    selectEl.__comboWrap = wrap;
+
+    const stop = (e) => { try { e.stopPropagation(); } catch {} };
+    const stopHard = (e) => { try { e.preventDefault(); } catch {} stop(e); };
+
+    const close = () => {
+        menu.hidden = true;
+        ctl.classList.remove("isOpen");
+        ctl.setAttribute("aria-expanded", "false");
+        search.value = "";
+        // reset filter
+        options.querySelectorAll(".comboOpt").forEach(o => o.hidden = false);
+        empty.hidden = true;
+    };
+    const open = () => {
+        if (selectEl.disabled) return;
+        closeOtherCombos(wrap);
+        menu.hidden = false;
+        ctl.classList.add("isOpen");
+        ctl.setAttribute("aria-expanded", "true");
+        // focus after paint to avoid scroll jumps
+        setTimeout(() => { try { search.focus(); } catch {} }, 0);
+    };
+
+    wrap.__comboClose = close;
+
+    ctl.addEventListener("pointerdown", (e) => {
+        stopHard(e);
+        if (selectEl.disabled) return;
+        menu.hidden ? open() : close();
+    });
+
+    // IMPORTANT: if this combobox lives inside a <label>, the label's default action can
+    // steal focus back to the hidden <select> on click. Keep click default suppressed.
+    ctl.addEventListener("click", stopHard);
+
+    ctl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); menu.hidden ? open() : close(); }
+        if (e.key === "Escape") { e.preventDefault(); close(); }
+    });
+
+    menu.addEventListener("pointerdown", stop); // don’t bubble to click-away
+
+    search.addEventListener("input", () => {
+        const q = normalizeComboQuery(search.value);
+        let visible = 0;
+        options.querySelectorAll(".comboOpt").forEach(o => {
+            const t = normalizeComboText(o.dataset.label);
+            const show = q ? t.includes(q) : true;
+            o.hidden = !show;
+            if (show) visible++;
+        });
+        empty.hidden = visible !== 0;
+    });
+
+    options.addEventListener("pointerdown", (e) => {
+        stopHard(e);
+        const opt = e.target?.closest?.(".comboOpt");
+        if (!opt) return;
+        const val = opt.getAttribute("data-value") || "";
+        selectEl.value = val;
+        selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+        refreshComboFromSelect(selectEl, { placeholder });
+        close();
+    });
+
+    // Global click-away for single comboboxes (bound once)
+    if (!window.__comboSingleGlobalBound) {
+        window.__comboSingleGlobalBound = true;
+        document.addEventListener("pointerdown", (e) => {
+            document.querySelectorAll(".comboWrap").forEach(node => {
+                if (node.contains(e.target)) return;
+                if (node.__comboClose) node.__comboClose();
+            });
+        }, true);
+    }
+
+    refreshComboFromSelect(selectEl, { placeholder });
+}
+
+function refreshComboFromSelect(selectEl, cfg){
+    if (!selectEl || !selectEl.__comboWrap) return;
+    const placeholder = cfg?.placeholder || "Wybierz...";
+    const wrap = selectEl.__comboWrap;
+    const ctl = wrap.querySelector(".comboCtl");
+    const valueEl = wrap.querySelector(".comboValue");
+    const options = wrap.querySelector(".comboOptions");
+    const empty = wrap.querySelector(".comboEmpty");
+    if (!ctl || !valueEl || !options) return;
+
+    // disabled sync
+    if (selectEl.disabled) ctl.classList.add("isDisabled");
+    else ctl.classList.remove("isDisabled");
+
+    // Selected label
+    const selOpt = selectEl.selectedOptions && selectEl.selectedOptions[0];
+    const hasValue = !!(selOpt && selOpt.value);
+    if (!hasValue) {
+        valueEl.innerHTML = `<span class="comboPlaceholder">${escapeHtml(placeholder)}</span>`;
+    } else {
+        valueEl.textContent = selOpt.textContent || selOpt.value;
+    }
+
+    // rebuild option list (keep empty at end)
+    options.querySelectorAll(".comboOpt").forEach(n => n.remove());
+    const frag = document.createDocumentFragment();
+    Array.from(selectEl.options || []).forEach(o => {
+        // Hide the redundant empty placeholder option from the custom dropdown list
+        // (keep the "no selection" state via the combobox placeholder text).
+        const isEmptyOpt = !String(o.value || "").trim();
+        const optLabel = String(o.textContent || "").trim();
+        const hideEmptyByDefault = !(cfg && cfg.showEmptyOption === true);
+        if (hideEmptyByDefault && isEmptyOpt && (/^--\s*wybierz\s*--$/i.test(optLabel) || /wybierz/i.test(optLabel) || optLabel === "")) {
+            return;
+        }
+
+        const div = document.createElement("div");
+        div.className = "comboOpt";
+        div.setAttribute("data-value", o.value);
+        div.dataset.label = normalizeComboText(o.textContent || o.value);
+        div.textContent = o.textContent || o.value;
+        frag.appendChild(div);
+    });
+    // Insert before empty
+    if (empty) options.insertBefore(frag, empty);
+    else options.appendChild(frag);
+}
+
+function closeOtherCombos(currentNode){
+    // Close multi
+    document.querySelectorAll(".comboMulti").forEach(node => {
+        if (node === currentNode) return;
+        if (node.__comboClose) node.__comboClose();
+    });
+    // Close single
+    document.querySelectorAll(".comboWrap").forEach(node => {
+        if (node === currentNode) return;
+        if (node.__comboClose) node.__comboClose();
+    });
+}
+
+function escapeHtml(str) {
+    return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
 }
 
 // === UTILS UI ===
@@ -838,6 +1352,11 @@ function renderSelectOptions(select, values, displayMapFn = x => x) {
     select.innerHTML = '<option value="">-- Wybierz --</option>' +
         values.map(v => `<option value="${v}">${displayMapFn(v)}</option>`).join("");
     if (values.includes(current)) select.value = current;
+
+    // If the select is wrapped in a combobox, keep UI in sync.
+    try {
+        if (select.__comboWrap) refreshComboFromSelect(select);
+    } catch {}
 }
 
 function toast(title, msg, type="ok") {

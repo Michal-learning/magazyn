@@ -8,6 +8,11 @@ const STORAGE_KEY = "magazyn_state_v2_1";
 const THEME_KEY = "magazyn_theme";
 const THRESHOLDS_OPEN_KEY = "magazyn_thresholds_open";
 
+// Guardy anty-dwuklik dla operacji krytycznych (musi być zadeklarowane, inaczej ReferenceError blokuje przyciski)
+let _finalizeDeliveryBusy = false;
+let _finalizeBuildBusy = false;
+
+
 
 function applyTheme(theme) {
     const t = (theme === "light") ? "light" : "dark";
@@ -160,14 +165,52 @@ function restoreState(data) {
 
     state.history = asArr(data.history).filter(Boolean);
 
-    LOW_WARN = data.LOW_WARN ?? 100;
-    LOW_DANGER = data.LOW_DANGER ?? 50;
+    // Thresholds: clamp + invariants (always valid immediately after reload)
+    LOW_WARN = (strictNonNegInt(data.LOW_WARN) ?? 100);
+    LOW_DANGER = (strictNonNegInt(data.LOW_DANGER) ?? 50);
+    if (LOW_WARN < 0) LOW_WARN = 0;
+    if (LOW_DANGER < 0) LOW_DANGER = 0;
+    if (LOW_DANGER > LOW_WARN) LOW_DANGER = LOW_WARN;
 
-    state.partsCatalog = new Map(data.partsCatalog || []);
+    // Defensive restore of Map-like structures from localStorage
+    // partsCatalog: serialized as Array<[skuKey, {sku,name}]>
+    state.partsCatalog = new Map();
+    const pc = (Array.isArray(data.partsCatalog) ? data.partsCatalog : []);
+    for (const ent of pc) {
+        if (!Array.isArray(ent) || ent.length < 2) continue;
+        const rawKey = ent[0];
+        const v = ent[1] || {};
+        const k = skuKey(rawKey);
+        const sku = normalize(v.sku ?? rawKey);
+        const name = normalize(v.name);
+        if (!k || !sku || !name) continue;
+        state.partsCatalog.set(k, { sku, name });
+    }
+
+    // suppliers: serialized as Array<{name, prices:Array<[skuKey, price]>}>
     state.suppliers = new Map();
-    (data.suppliers || []).forEach(s => {
-        state.suppliers.set(s.name, { prices: new Map(s.prices || []) });
-    });
+    const sups = Array.isArray(data.suppliers) ? data.suppliers : [];
+    for (const s of sups) {
+        // Support potential older shape: [name, {prices:[...]}]
+        let name = "";
+        let pricesRaw = [];
+        if (Array.isArray(s)) {
+            name = normalize(s[0]);
+            pricesRaw = Array.isArray(s[1]?.prices) ? s[1].prices : [];
+        } else {
+            name = normalize(s?.name);
+            pricesRaw = Array.isArray(s?.prices) ? s.prices : [];
+        }
+        if (!name) continue;
+        const prices = new Map();
+        for (const pe of pricesRaw) {
+            if (!Array.isArray(pe) || pe.length < 2) continue;
+            const pk = skuKey(pe[0]);
+            if (!pk) continue;
+            prices.set(pk, safeFloat(pe[1]));
+        }
+        state.suppliers.set(name, { prices });
+    }
 
     syncIdCounter();
 }
@@ -194,6 +237,34 @@ function resetData() {
 const normalize = (str) => String(str || "").trim();
 const skuKey = (str) => normalize(str).toLowerCase();
 
+// Strict integer parsing helpers (avoid parseInt("1e3") === 1, "12abc" === 12, etc.)
+function strictParseIntString(s) {
+    const t = String(s ?? "").trim();
+    // Allow only digits (no sign, no decimals, no exponent, no junk)
+    if (!/^\d+$/.test(t)) return null;
+    const n = Number(t);
+    if (!Number.isFinite(n)) return null;
+    // Clamp to MAX_SAFE_INTEGER to avoid weirdness
+    return Math.min(n, Number.MAX_SAFE_INTEGER);
+}
+
+function strictNonNegInt(val) {
+    if (typeof val === "number") {
+        if (!Number.isFinite(val)) return null;
+        const n = Math.trunc(val);
+        if (n < 0) return 0;
+        return Math.min(n, Number.MAX_SAFE_INTEGER);
+    }
+    const n = strictParseIntString(val);
+    return (n === null) ? null : Math.max(0, Math.trunc(n));
+}
+
+function strictPosInt(val) {
+    const n = strictNonNegInt(val);
+    if (n === null) return null;
+    return Math.max(1, n);
+}
+
 // POPRAWKA: Obsługa przecinków (np. "12,50" -> 12.50)
 const safeFloat = (val) => {
     if (typeof val === "number") return Math.max(0, val);
@@ -201,12 +272,16 @@ const safeFloat = (val) => {
     return Math.max(0, parseFloat(strVal) || 0);
 };
 
-const safeInt = (val) => Math.max(1, parseInt(val) || 1);
+// User-entered required quantities (delivery/build/BOM): integer >= 1, strict.
+const safeInt = (val) => {
+    const n = strictPosInt(val);
+    return (n === null) ? 1 : n;
+};
 // NOTE: quantities in stock can be 0 when data is corrupted/imported; we normalize to integer >= 0.
 // Keep safeInt() as >=1 for user-entered required quantities (delivery/build/BOM).
 const safeQtyInt = (val) => {
-    const n = parseInt(val, 10);
-    return Number.isFinite(n) ? Math.max(0, n) : 0;
+    const n = strictNonNegInt(val);
+    return (n === null) ? 0 : n;
 };
 
 // DOM helpers (defensive, minimal)
@@ -316,6 +391,9 @@ function addToDelivery(supplier, skuRaw, qty, price) {
 }
 
 function finalizeDelivery() {
+    if (_finalizeDeliveryBusy) return toast("Uwaga", "Operacja już trwa (podwójne kliknięcie zablokowane).", "warn");
+    _finalizeDeliveryBusy = true;
+    try {
     // --- POPRAWKA TUTAJ ---
     // Pobieramy datę bezpośrednio z pola input przed sprawdzeniem
     const dateInput = document.getElementById("deliveryDate");
@@ -368,6 +446,9 @@ function finalizeDelivery() {
     renderWarehouse();
     renderHistory();
     toast("Sukces", "Towar przyjęty na stan.", "ok");
+    } finally {
+        _finalizeDeliveryBusy = false;
+    }
 }
 
 // === LOGIKA BIZNESOWA: PRODUKCJA ===
@@ -402,6 +483,9 @@ function checkStockAvailability(needs) {
 }
 
 function finalizeBuild(manualAllocation = null) {
+    if (_finalizeBuildBusy) return toast("Uwaga", "Operacja już trwa (podwójne kliknięcie zablokowane).", "warn");
+    _finalizeBuildBusy = true;
+    try {
 
     // Pobierz datę produkcji z formularza (jeśli puste, użyj dzisiejszej)
     const buildDateInput = document.getElementById("buildDate");
@@ -607,7 +691,7 @@ function finalizeBuild(manualAllocation = null) {
         dateISO: buildISO,
         items: buildItemsDetailed
     });
-state.currentBuild.items = [];
+    state.currentBuild.items = [];
     if (buildDateInput) buildDateInput.value = "";
     save();
     
@@ -616,6 +700,9 @@ state.currentBuild.items = [];
     renderMachinesStock();
     renderHistory();
     toast("Produkcja zakończona", "Stany zaktualizowane.", "ok");
+    } finally {
+        _finalizeBuildBusy = false;
+    }
 }
 
 

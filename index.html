@@ -87,7 +87,7 @@
                     </div>
 
                     <div class="toolbar partsToolbar">
-                        <input id="searchParts" placeholder="Szukaj po Nazwie lub Typie..." type="text" autocomplete="off" />
+                        <input id="searchParts" placeholder="Szukaj po Nazwie/Typie/Dostawcy..." type="text" autocomplete="off" />
 
                         <div class="segmented" role="tablist" aria-label="Widok magazynu części">
                             <button id="partsViewCompactBtn" type="button" class="secondary compact" role="tab" aria-selected="true">
@@ -287,14 +287,14 @@
                 <div class="card">
                     <h2>Magazyn Wyrobów Gotowych</h2>
                     <div class="toolbar">
-                        <input id="searchMachines" placeholder="Szukaj maszyny..." type="text" autocomplete="off" />
+                        <input id="searchMachines" placeholder="Szukaj po Nazwie/Typie..." type="text" autocomplete="off" />
                     </div>
                     <div class="tableWrap">
                         <table id="machinesStockTable">
                             <thead>
                                 <tr>
                                     <th>Nazwa Maszyny (ID)</th>
-                                    <th>Typ (Nazwa handlowa)</th>
+                                    <th>Typ</th>
                                     <th class="right">Magazyn Części</th>
                                 </tr>
                             </thead>
@@ -327,7 +327,7 @@
                             Przypisz do istniejących dostawców:
                         </div>
 
-                        <div id="partNewSuppliersChecklist" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:15px; background:rgba(0,0,0,0.2); padding:10px; border-radius:8px;">
+                        <div id="partNewSuppliersChecklist" class="comboMulti" data-combo="suppliers">
                             <span class="small muted">Brak zdefiniowanych dostawców. Dodaj ich w zakładce "Dostawcy".</span>
                         </div>
 
@@ -366,7 +366,7 @@
                             Przypisz do istniejących dostawców:
                         </div>
 
-                        <div id="editPartSuppliersChecklist" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:15px; background:rgba(0,0,0,0.2); padding:10px; border-radius:8px;">
+                        <div id="editPartSuppliersChecklist" class="comboMulti" data-combo="suppliers">
                             <span class="small muted">Brak zdefiniowanych dostawców.</span>
                         </div>
 
@@ -545,7 +545,7 @@
             </section>
 
 
-            <section class="tabPanel" data-tab-panel="history" hidden>
+                        <section class="tabPanel" data-tab-panel="history" hidden>
                 <div class="card">
                     <div class="cardHeader">
                         <div>
@@ -557,12 +557,26 @@
                         </div>
                     </div>
 
+                    <div class="toolbar historyToolbar">
+                        <input id="historySearch" placeholder="Szukaj po Dostawcy lub Nazwie/Typie części..." type="text" autocomplete="off" />
+                        <input id="historyDateRange" class="dateRangeInput" placeholder="01.01.2026-02.01.2026" type="text" inputmode="numeric" autocomplete="off" />
+
+                        <div class="segmented" role="tablist" aria-label="Widok historii">
+                            <button id="historyViewDeliveriesBtn" type="button" class="secondary compact" role="tab" aria-selected="true">
+                                Dostawy
+                            </button>
+                            <button id="historyViewBuildsBtn" type="button" class="secondary compact" role="tab" aria-selected="false">
+                                Produkcje
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="tableWrap">
                         <table id="historyTable" class="tightTable stickyHeader">
                             <thead>
                                 <tr>
-                                    <th>Typ</th>
                                     <th>Data</th>
+                                    <th>Szczegóły</th>
                                     <th class="right">Podgląd</th>
                                 </tr>
                             </thead>
@@ -571,7 +585,7 @@
                     </div>
 
                     <p class="small muted" style="margin:12px 0 0">
-                        Tip: Kliknij „Podgląd”, żeby zobaczyć szczegóły. Dane zapisują się lokalnie.
+                        Tip: Kliknij „Podgląd”, żeby zobaczyć szczegóły. Filtr dat: wpisz „DD.MM.RRRR-DD.MM.RRRR” albo samo „DD.MM.RRRR”.
                     </p>
                 </div>
             </section>

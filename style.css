@@ -27,6 +27,7 @@
     --modal-bg: #1a1d24;
     --sideTitle: rgba(255,255,255,0.65);
     /* Surfaces & interactive (theme-aware) */
+    --surface-1: rgba(20, 22, 28, 0.96);
     --surface-2: rgba(0,0,0,0.20);
     --surface-3: rgba(0,0,0,0.30);
     --row-hover: rgba(255,255,255,0.02);
@@ -215,6 +216,126 @@ input, select {
     padding: 10px 12px;
     transition: border-color var(--trans-fast), box-shadow var(--trans-fast);
     width: 100%;
+}
+
+/* =========================================================
+   Combobox (single-select) + Native select hiding
+   ========================================================= */
+
+.comboNativeHidden{
+    position: absolute !important;
+    left: -10000px !important;
+    top: auto !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.comboWrap{
+    position: relative;
+    width: 100%;
+}
+
+.comboCtl{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    background: var(--field-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 8px;
+    min-height: 42px;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color var(--trans-fast), box-shadow var(--trans-fast);
+}
+
+.comboCtl:focus-visible{
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+    outline: none;
+}
+
+.comboCtl.isOpen{
+    border-color: var(--accent);
+}
+
+.comboCtl.isDisabled{
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.comboValue{
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.comboPlaceholder{
+    color: var(--muted);
+}
+
+.comboCaret{
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.comboMenu{
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 8px);
+    z-index: 999;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+    box-shadow: 0 14px 40px rgba(0,0,0,0.35);
+    overflow: hidden;
+}
+
+:root[data-theme="light"] .comboMenu{
+    box-shadow: 0 14px 40px rgba(15,23,42,0.14);
+}
+
+.comboSearchWrap{
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.comboSearch{
+    width: 100%;
+}
+
+.comboOptions{
+    max-height: 240px;
+    overflow: auto;
+    padding: 6px;
+}
+
+.comboOpt{
+    padding: 8px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.comboOpt:hover{
+    background: rgba(255,255,255,0.04);
+}
+
+:root[data-theme="light"] .comboOpt:hover{
+    background: rgba(15,23,42,0.04);
+}
+
+.comboEmpty{
+    padding: 10px 12px;
+    color: var(--muted);
+    font-size: 0.9rem;
 }
 
     input:focus, select:focus {
@@ -743,6 +864,7 @@ input[readonly] {
     --table-bg: rgba(15,23,42,0.03);
     --thead-bg: rgba(15,23,42,0.045);
     --stickyhead-bg: rgba(249,250,255,0.98);
+    --surface-1: rgba(249,250,255,0.98);
     --surface-2: rgba(15,23,42,0.03);
     --surface-3: rgba(15,23,42,0.05);
     --row-hover: rgba(15,23,42,0.03);
@@ -1430,6 +1552,78 @@ button.success {
     color: var(--muted);
     font-size: 0.85rem;
 }
+
+/* === Multi-combobox (Supplier picker) === */
+.comboMulti{ position: relative; margin-bottom: 15px; }
+.comboMulti .comboCtl{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    min-height: 42px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    cursor: pointer;
+}
+.comboMulti .comboCtl:focus-visible{ outline: none; box-shadow: var(--focus-ring); border-color: var(--accent); }
+.comboMulti .comboLeft{ display:flex; flex-wrap:wrap; gap: 6px; align-items:center; min-width:0; }
+.comboMulti .comboPlaceholder{ color: var(--muted); font-size: 0.9rem; }
+.comboMulti .comboChip{
+    display:inline-flex;
+    align-items:center;
+    gap: 6px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.09);
+    font-size: 0.85rem;
+    white-space: nowrap;
+    max-width: 100%;
+}
+:root[data-theme="light"] .comboMulti .comboChip{
+    background: rgba(15,23,42,0.04);
+    border-color: rgba(15,23,42,0.10);
+}
+.comboMulti .comboChip .x{ opacity: 0.75; font-weight: 700; }
+.comboMulti .comboCaret{ color: var(--muted); }
+.comboMulti .comboMenu{
+    position:absolute;
+    left:0;
+    right:0;
+    top: calc(100% + 8px);
+    z-index: 50;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+    box-shadow: 0 14px 40px rgba(0,0,0,0.35);
+    overflow: hidden;
+}
+:root[data-theme="light"] .comboMulti .comboMenu{
+    box-shadow: 0 14px 40px rgba(15,23,42,0.14);
+}
+.comboMulti .comboSearchWrap{ padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.comboMulti .comboSearch{ width: 100%; }
+.comboMulti .comboOptions{ max-height: 240px; overflow:auto; padding: 6px; }
+.comboMulti .comboOpt{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    cursor:pointer;
+}
+.comboMulti .comboOpt[hidden]{ display:none !important; }
+.comboMulti .comboEmpty[hidden]{ display:none !important; }
+.comboMulti .comboOpt:hover{ background: rgba(255,255,255,0.04); }
+:root[data-theme="light"] .comboMulti .comboOpt:hover{ background: rgba(15,23,42,0.04); }
+.comboMulti .comboOpt .tick{ color: var(--accent); font-weight: 800; opacity: 0; }
+.comboMulti .comboOpt[data-selected="1"] .tick{ opacity: 1; }
+.comboMulti .comboEmpty{ padding: 10px 12px; color: var(--muted); font-size: 0.9rem; }
+
 /* =========================================================
    ENTERPRISE POLISH PACK (append at END of style.css)
    Goal: calm, readable, “expensive”, low-fatigue data UI
@@ -2122,3 +2316,29 @@ body.is-loading .tableWrap {
 .buildPartsWrap table tr:hover td{
     background: transparent !important;
 }
+
+
+/* === History: split + filters (search + date range) === */
+.historyToolbar {
+  gap: 10px;
+  align-items: center;
+}
+
+.historyToolbar .dateRangeInput {
+  max-width: 220px;
+}
+
+@media (max-width: 900px) {
+  .historyToolbar {
+    flex-wrap: wrap;
+  }
+  .historyToolbar .dateRangeInput {
+    max-width: none;
+    flex: 1 1 200px;
+  }
+}
+
+.historyMeta .historyMoney {
+  font-variant-numeric: tabular-nums;
+}
+
